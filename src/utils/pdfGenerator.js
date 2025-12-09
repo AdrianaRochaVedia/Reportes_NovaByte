@@ -3,129 +3,110 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const moment = require('moment');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+const { REPORTS_OUTPUT_DIR, REPORTS_TEMP_DIR } = require('../config');
 
 class PDFGenerator {
   constructor() {
-    this.uploadDir = path.join(__dirname, '../Uploads');
+    this.outputDir = REPORTS_OUTPUT_DIR;
+    this.tempDir = REPORTS_TEMP_DIR;
     this.colors = {
-      primary: '#1565C0',     
-      secondary: '#424242',    
-      light: '#E3F2FD',        
-      border: '#1976D2',       
-      accent: '#2196F3',      
-      textDark: '#0D47A1'      
+      primary: '#2563eb',      // Azul médico
+      secondary: '#64748b',    // Gris
+      success: '#10b981',      // Verde
+      warning: '#f59e0b',      // Naranja
+      danger: '#ef4444',       // Rojo
+      light: '#f1f5f9',        // Gris claro
+      border: '#cbd5e1',       // Borde
+      accent: '#06b6d4',       // Cyan
+      textDark: '#1e293b'      // Texto oscuro
     };
     this.fonts = {
       regular: 'Helvetica',
       bold: 'Helvetica-Bold',
       italic: 'Helvetica-Oblique'
     };
-    this.fileRetentionTime = 3600000;
-    this.cleanupInterval = 24 * 60 * 60 * 1000;
-    this._initializeUploadDirectory();
+    this.fileRetentionTime = 3600000; // 1 hora
+    this.cleanupInterval = 24 * 60 * 60 * 1000; // 24 horas
+    
+    this._initializeDirectories();
     this._startCleanupScheduler();
   }
 
-  _initializeUploadDirectory() {
-    if (!fs.existsSync(this.uploadDir)) {
-      fs.mkdirSync(this.uploadDir, { recursive: true });
-    }
+  _initializeDirectories() {
+    [this.outputDir, this.tempDir].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
   }
 
-  async generatePDFReport(sacramentos, options = {}, filter = {}, estadisticas = null) {
-    const fields = options.fields || [
-      'id_sacramento', 
-      'fecha_sacramento', 
-      'tipo_sacramento', 
-      'foja', 
-      'numero', 
-      'parroquia',
-      'activo',
-      'fecha_registro'
-    ];
-    
+  // ============================================
+  // HISTORIA CLÍNICA COMPLETA
+  // ============================================
+  
+  async generarHistoriaClinicaPDF(datos, filtro) {
     const timestamp = Date.now();
-    const fileName = `reporte_sacramentos_${timestamp}.pdf`;
-    const filePath = path.join(this.uploadDir, fileName);
-    const doc = new PDFDocument({ autoFirstPage: false });
+    const fileName = `historia_clinica_${datos.paciente.nombre}_${timestamp}.pdf`;
+    const filePath = path.join(this.outputDir, fileName);
+    
+    const doc = new PDFDocument({ 
+      autoFirstPage: false,
+      margins: { top: 50, bottom: 50, left: 50, right: 50 }
+    });
+    
     doc.pipe(fs.createWriteStream(filePath));
 
     let pageNumber = 1;
-    
+
     // Portada
-    this._addPortada(doc);
-
-    // Página de información general
+    this._addPortadaMedica(doc, 'Historia Clínica');
+    
+    // Página 1: Datos del paciente
     doc.addPage();
-    this._addHeader(doc, options.titulo);
-    this._addFilterInfo(doc, filter, sacramentos.length);
-    
-    
-    if (options.incluirEstadisticas && estadisticas) {
-      this._addEstadisticasResumen(doc, estadisticas);
-    }
-    
+    this._addHeaderMedico(doc, 'Historia Clínica Completa');
+    this._addDatosPaciente(doc, datos.paciente);
     this._addFooter(doc, pageNumber++);
 
-    // Tabla de datos
-    doc.addPage();
-    this._addHeader(doc, options.titulo);
-    this._addTable(doc, sacramentos, fields, () => {
-      this._addFooter(doc, pageNumber++);
+    // Página 2: Antecedentes y Alergias
+    if (datos.antecedentes?.length > 0 || datos.alergias?.length > 0) {
       doc.addPage();
-      this._addHeader(doc, options.titulo);
-    });
-    this._addFooter(doc, pageNumber++);
-
-    // Gráfica de distribución por tipo
-    try {
-      const chartImageTipo = await this._generateChartByType(sacramentos);
-      doc.addPage();
-      this._addHeader(doc, options.titulo);
-      doc.moveDown(1);
-      doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
-        .text('Distribución por Tipo de Sacramento', 50);
-      doc.moveDown(1.5);
-      this._addChartToPage(doc, chartImageTipo);
-      this._addFooter(doc, pageNumber++);
-    } catch (err) {
-      console.error('Error generando gráfica de tipos:', err.message);
-    }
-
-  
-    if (options.incluirEstadisticas && estadisticas) {
-      // Gráfica por parroquia
-      if (estadisticas.por_parroquia && estadisticas.por_parroquia.length > 1) {
-        try {
-          const chartImageParroquia = await this._generateChartByParroquia(estadisticas.por_parroquia);
-          doc.addPage();
-          this._addHeader(doc, options.titulo);
-          doc.moveDown(1);
-          doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
-            .text('Distribución por Parroquia', 50);
-          doc.moveDown(1.5);
-          this._addChartToPage(doc, chartImageParroquia);
-          this._addFooter(doc, pageNumber++);
-        } catch (err) {
-          console.error('Error generando gráfica de parroquias:', err.message);
-        }
+      this._addHeaderMedico(doc, 'Historia Clínica Completa');
+      
+      if (datos.antecedentes?.length > 0) {
+        this._addAntecedentes(doc, datos.antecedentes);
       }
+      
+      if (datos.alergias?.length > 0) {
+        this._addAlergias(doc, datos.alergias);
+      }
+      
+      this._addFooter(doc, pageNumber++);
+    }
 
-      // Gráfica por meses
-      if (estadisticas.por_mes && estadisticas.por_mes.length > 1) {
-        try {
-          const chartImageMes = await this._generateChartByMonth(estadisticas.por_mes);
-          doc.addPage();
-          this._addHeader(doc, options.titulo);
-          doc.moveDown(1);
-          doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
-            .text('Distribución Temporal (por mes)', 50);
-          doc.moveDown(1.5);
-          this._addChartToPage(doc, chartImageMes);
-          this._addFooter(doc, pageNumber++);
-        } catch (err) {
-          console.error('Error generando gráfica de meses:', err.message);
-        }
+    // Páginas siguientes: Consultas
+    if (datos.consultas && datos.consultas.length > 0) {
+      for (const consulta of datos.consultas) {
+        doc.addPage();
+        this._addHeaderMedico(doc, 'Historia Clínica Completa');
+        this._addConsultaDetalle(doc, consulta);
+        this._addFooter(doc, pageNumber++);
+      }
+    }
+
+    // Página de gráfica de signos vitales
+    const signosVitalesData = this._extractSignosVitalesData(datos.consultas);
+    if (signosVitalesData.length > 1) {
+      try {
+        const chartImage = await this._generateSignosVitalesChart(signosVitalesData);
+        doc.addPage();
+        this._addHeaderMedico(doc, 'Historia Clínica Completa');
+        doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
+          .text('Evolución de Signos Vitales', 50, doc.y);
+        doc.moveDown(1);
+        this._addChartToPage(doc, chartImage);
+        this._addFooter(doc, pageNumber++);
+      } catch (err) {
+        console.error('Error generando gráfica de signos vitales:', err);
       }
     }
 
@@ -133,14 +114,13 @@ class PDFGenerator {
     return this._createFileInfoPromise(fileName, filePath);
   }
 
-  _addEstadisticasResumen(doc, estadisticas) {
-    doc.moveDown(1);
-    doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
-      .text('Resumen Estadístico', 50);
+  _addDatosPaciente(doc, paciente) {
+    doc.fontSize(16).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text('Datos del Paciente', 50);
     doc.moveDown(0.5);
 
     const boxY = doc.y;
-    const boxHeight = 120;
+    const boxHeight = 140;
     doc.rect(50, boxY, doc.page.width - 100, boxHeight)
       .fillColor(this.colors.light).fill();
 
@@ -148,216 +128,284 @@ class PDFGenerator {
     
     let currentY = boxY + 15;
     const leftCol = 70;
-    const rightCol = 320;
+    const rightCol = 350;
 
-    doc.font(this.fonts.bold).text('Total de sacramentos:', leftCol, currentY);
-    doc.font(this.fonts.regular).text(estadisticas.total?.toString() || '0', leftCol + 150, currentY);
+    // Columna izquierda
+    doc.font(this.fonts.bold).text('Nombre completo:', leftCol, currentY);
+    doc.font(this.fonts.regular).text(
+      `${paciente.nombre} ${paciente.apellidos}`, 
+      leftCol, currentY + 15
+    );
     
-    currentY += 20;
-    doc.font(this.fonts.bold).text('Sacramentos activos:', leftCol, currentY);
-    doc.font(this.fonts.regular).fillColor('#66bb6a')
-      .text(estadisticas.activos?.toString() || '0', leftCol + 150, currentY);
+    currentY += 40;
+    doc.font(this.fonts.bold).text('Email:', leftCol, currentY);
+    doc.font(this.fonts.regular).text(paciente.email || 'No registrado', leftCol, currentY + 15);
     
-    currentY += 20;
-    doc.font(this.fonts.regular).fillColor(this.colors.textDark);
-    doc.font(this.fonts.bold).text('Sacramentos inactivos:', leftCol, currentY);
-    doc.font(this.fonts.regular).fillColor('#ef5350')
-      .text(estadisticas.inactivos?.toString() || '0', leftCol + 150, currentY);
-
+    // Columna derecha
     currentY = boxY + 15;
-    doc.fillColor(this.colors.textDark);
-    doc.font(this.fonts.bold).text('Tipos diferentes:', rightCol, currentY);
-    doc.font(this.fonts.regular).text(estadisticas.por_tipo?.length?.toString() || '0', rightCol + 150, currentY);
+    doc.font(this.fonts.bold).text('Fecha de nacimiento:', rightCol, currentY);
+    doc.font(this.fonts.regular).text(
+      paciente.fecha_nacimiento 
+        ? moment(paciente.fecha_nacimiento).format('DD/MM/YYYY')
+        : 'No registrada',
+      rightCol, currentY + 15
+    );
     
-    currentY += 20;
-    doc.font(this.fonts.bold).text('Parroquias:', rightCol, currentY);
-    doc.font(this.fonts.regular).text(estadisticas.por_parroquia?.length?.toString() || '0', rightCol + 150, currentY);
-    
-    currentY += 20;
-    doc.font(this.fonts.bold).text('Usuarios registradores:', rightCol, currentY);
-    doc.font(this.fonts.regular).text(estadisticas.por_usuario?.length?.toString() || '0', rightCol + 150, currentY);
+    currentY += 40;
+    doc.font(this.fonts.bold).text('Edad:', rightCol, currentY);
+    doc.font(this.fonts.regular).text(
+      paciente.edad ? `${paciente.edad} años` : 'No calculada',
+      rightCol, currentY + 15
+    );
 
-    doc.moveDown(4);
+    doc.moveDown(10);
   }
 
-  _addFilterInfo(doc, filter, total) {
-    const boxHeight = this._calculateFilterBoxHeight(filter);
-    
-    doc.rect(50, doc.y, doc.page.width - 100, boxHeight)
-      .fillColor(this.colors.light).fill();
-    
-    const startY = doc.y + 10;
+  _addAntecedentes(doc, antecedentes) {
     doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
-      .text('Criterios de filtrado:', 60, startY);
-    doc.fontSize(10).font(this.fonts.regular).fillColor(this.colors.textDark);
+      .text('Antecedentes Médicos', 50);
+    doc.moveDown(0.5);
 
-    const filtros = this._buildFiltersList(filter);
+    antecedentes.forEach((ant, idx) => {
+      doc.fontSize(10).font(this.fonts.bold).fillColor(this.colors.textDark)
+        .text(`${idx + 1}. ${ant.tipo}`, 70);
+      doc.fontSize(10).font(this.fonts.regular)
+        .text(ant.descripcion, 70, doc.y, { width: doc.page.width - 140 });
+      doc.moveDown(0.5);
+    });
 
-    if (filtros.length > 0) {
-      filtros.forEach((filtro, idx) => {
-        if (idx > 0) doc.moveDown(0.3);
-        doc.text(`• ${filtro}`, 60, doc.y, { align: 'left' });
-      });
-    } else {
-      doc.text('Sin filtros aplicados - Mostrando todos los sacramentos', 60, doc.y, { align: 'left' });
-    }
-    
-    doc.moveDown(0.8);
-    doc.font(this.fonts.bold).fillColor(this.colors.accent)
-      .text(`Total de sacramentos encontrados: ${total}`, 60);
-    doc.moveDown(2);
+    doc.moveDown(1);
   }
 
-  _calculateFilterBoxHeight(filter) {
-    const filtros = this._buildFiltersList(filter);
-    const numFiltros = filtros.length || 1;
-    return Math.max(90, 60 + (numFiltros * 15));
+  _addAlergias(doc, alergias) {
+    doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.danger)
+      .text('⚠️ Alergias', 50);
+    doc.moveDown(0.5);
+
+    const boxY = doc.y;
+    const boxHeight = Math.min(100, 20 + alergias.length * 25);
+    
+    doc.rect(50, boxY, doc.page.width - 100, boxHeight)
+      .fillColor('#fee2e2').fill();
+
+    let currentY = boxY + 10;
+    alergias.forEach((alergia) => {
+      doc.fontSize(10).font(this.fonts.bold).fillColor(this.colors.danger)
+        .text(`• ${alergia.sustancia}`, 70, currentY);
+      doc.font(this.fonts.regular).fillColor(this.colors.textDark)
+        .text(
+          `Severidad: ${alergia.severidad || 'No especificada'}`,
+          90, currentY + 12
+        );
+      currentY += 25;
+    });
+
+    doc.moveDown(5);
   }
 
-  _buildFiltersList(filter) {
-    const filtros = [];
+  _addConsultaDetalle(doc, consulta) {
+    // Fecha y médico
+    doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text(`Consulta - ${moment(consulta.created_at).format('DD/MM/YYYY')}`, 50);
     
-    if (filter.tipo_sacramento_id_tipo) {
-      filtros.push(`Tipo de Sacramento: ID ${filter.tipo_sacramento_id_tipo}`);
-    }
-    if (filter.institucion_parroquia_id_parroquia) {
-      filtros.push(`Parroquia: ID ${filter.institucion_parroquia_id_parroquia}`);
-    }
-    if (filter.usuario_id_usuario) {
-      filtros.push(`Usuario: ID ${filter.usuario_id_usuario}`);
-    }
-    
-    if (filter.activo !== undefined && filter.activo !== null) {
-      filtros.push(`Estado: ${filter.activo ? 'Activos' : 'Inactivos'}`);
+    if (consulta.medico) {
+      doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.secondary)
+        .text(
+          `Dr(a). ${consulta.medico.nombre} ${consulta.medico.apellidos} - ${consulta.medico.especialidad || ''}`,
+          50
+        );
     }
     
-    if (filter.foja) {
-      filtros.push(`Foja: ${filter.foja}`);
+    doc.moveDown(1);
+
+    // Motivo
+    if (consulta.motivo) {
+      this._addSection(doc, 'Motivo de consulta', consulta.motivo);
     }
-    if (filter.numero) {
-      filtros.push(`Número: ${filter.numero}`);
+
+    // Signos vitales
+    if (consulta.signosVitales) {
+      this._addSignosVitales(doc, consulta.signosVitales);
     }
-    
-    if (filter.numero_desde || filter.numero_hasta) {
-      const desde = filter.numero_desde || '∞';
-      const hasta = filter.numero_hasta || '∞';
-      filtros.push(`Rango de números: ${desde} - ${hasta}`);
+
+    // Anamnesis
+    if (consulta.anamnesis) {
+      this._addSection(doc, 'Anamnesis', consulta.anamnesis);
     }
-    
-    if (filter.anio_sacramento) {
-      filtros.push(`Año sacramento: ${filter.anio_sacramento}`);
+
+    // Examen físico
+    if (consulta.examen_fisico) {
+      this._addSection(doc, 'Examen Físico', consulta.examen_fisico);
     }
-    
-    if (filter.mes_sacramento) {
-      const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
-                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-      filtros.push(`Mes sacramento: ${meses[filter.mes_sacramento - 1]}`);
+
+    // Diagnósticos
+    if (consulta.diagnosticos && consulta.diagnosticos.length > 0) {
+      this._addDiagnosticos(doc, consulta.diagnosticos);
     }
-    
-    if (filter.fecha_sacramento_desde || filter.fecha_sacramento_hasta) {
-      const desde = filter.fecha_sacramento_desde 
-        ? moment(filter.fecha_sacramento_desde).format('DD/MM/YYYY') 
-        : '∞';
-      const hasta = filter.fecha_sacramento_hasta 
-        ? moment(filter.fecha_sacramento_hasta).format('DD/MM/YYYY') 
-        : '∞';
-      filtros.push(`Rango fechas sacramento: ${desde} - ${hasta}`);
+
+    // Plan
+    if (consulta.plan) {
+      this._addSection(doc, 'Plan', consulta.plan);
     }
-    
-    if (filter.anio_registro) {
-      filtros.push(`Año registro: ${filter.anio_registro}`);
+
+    // Receta
+    if (consulta.receta && consulta.receta.items) {
+      this._addReceta(doc, consulta.receta);
     }
-    
-    if (filter.fecha_registro_desde || filter.fecha_registro_hasta) {
-      const desde = filter.fecha_registro_desde 
-        ? moment(filter.fecha_registro_desde).format('DD/MM/YYYY') 
-        : '∞';
-      const hasta = filter.fecha_registro_hasta 
-        ? moment(filter.fecha_registro_hasta).format('DD/MM/YYYY') 
-        : '∞';
-      filtros.push(`Rango fechas registro: ${desde} - ${hasta}`);
+
+    // Observaciones
+    if (consulta.observaciones) {
+      this._addSection(doc, 'Observaciones', consulta.observaciones);
     }
-    
-    if (filter.fecha_actualizacion_desde || filter.fecha_actualizacion_hasta) {
-      const desde = filter.fecha_actualizacion_desde 
-        ? moment(filter.fecha_actualizacion_desde).format('DD/MM/YYYY') 
-        : '∞';
-      const hasta = filter.fecha_actualizacion_hasta 
-        ? moment(filter.fecha_actualizacion_hasta).format('DD/MM/YYYY') 
-        : '∞';
-      filtros.push(`Rango fechas actualización: ${desde} - ${hasta}`);
-    }
-    
-    if (filter.search) {
-      filtros.push(`Búsqueda: "${filter.search}"`);
-    }
-    
-    if (filter.orderBy) {
-      const dir = filter.orderDirection === 'DESC' ? 'Descendente' : 'Ascendente';
-      filtros.push(`Orden: ${filter.orderBy} (${dir})`);
-    }
-    
-    if (filter.limit) {
-      filtros.push(`Límite: ${filter.limit} registros`);
-    }
-    if (filter.offset) {
-      filtros.push(`Desde registro: ${filter.offset}`);
-    }
-    
-    return filtros;
   }
 
-  async _generateChartByType(sacramentos) {
-    const tipoCounts = sacramentos.reduce((acc, sac) => {
-      const tipo = sac.tipoSacramento?.nombre || 'Sin tipo';
-      acc[tipo] = (acc[tipo] || 0) + 1;
-      return acc;
-    }, {});
-
-    return await this._generatePieOrBarChart(
-      Object.keys(tipoCounts),
-      Object.values(tipoCounts),
-      'Distribución de sacramentos por tipo'
-    );
+  _addSection(doc, titulo, contenido) {
+    doc.fontSize(11).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text(titulo, 50);
+    doc.fontSize(10).font(this.fonts.regular).fillColor(this.colors.textDark)
+      .text(contenido, 70, doc.y, { width: doc.page.width - 140 });
+    doc.moveDown(1);
   }
 
-  async _generateChartByParroquia(porParroquia) {
-    const labels = porParroquia?.map(p => p.parroquia) || [];
-    const data = porParroquia?.map(p => p.cantidad) || [];
+  _addSignosVitales(doc, signos) {
+    doc.fontSize(11).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text('Signos Vitales', 50);
+    doc.moveDown(0.3);
+
+    const boxY = doc.y;
+    const boxHeight = 80;
+    doc.rect(50, boxY, doc.page.width - 100, boxHeight)
+      .fillColor(this.colors.light).fill();
+
+    doc.fontSize(9).font(this.fonts.regular).fillColor(this.colors.textDark);
     
-    return await this._generatePieOrBarChart(
-      labels,
-      data,
-      'Distribución de sacramentos por parroquia'
-    );
+    let currentY = boxY + 10;
+    const col1 = 70;
+    const col2 = 220;
+    const col3 = 370;
+
+    if (signos.presion_sistolica && signos.presion_diastolica) {
+      doc.text(`PA: ${signos.presion_sistolica}/${signos.presion_diastolica} mmHg`, col1, currentY);
+    }
+    if (signos.frecuencia_cardiaca) {
+      doc.text(`FC: ${signos.frecuencia_cardiaca} lpm`, col2, currentY);
+    }
+    if (signos.temperatura) {
+      doc.text(`T°: ${signos.temperatura} °C`, col3, currentY);
+    }
+
+    currentY += 20;
+    if (signos.saturacion_oxigeno) {
+      doc.text(`SpO2: ${signos.saturacion_oxigeno}%`, col1, currentY);
+    }
+    if (signos.peso_kg) {
+      doc.text(`Peso: ${signos.peso_kg} kg`, col2, currentY);
+    }
+    if (signos.talla_cm) {
+      doc.text(`Talla: ${signos.talla_cm} cm`, col3, currentY);
+    }
+
+    doc.moveDown(5);
   }
 
-  async _generateChartByMonth(porMes) {
+  _addDiagnosticos(doc, diagnosticos) {
+    doc.fontSize(11).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text('Diagnósticos', 50);
+    doc.moveDown(0.3);
+
+    diagnosticos.forEach((diag, idx) => {
+      const prefix = diag.principal ? '★' : '•';
+      const color = diag.principal ? this.colors.warning : this.colors.textDark;
+      
+      doc.fontSize(10).font(this.fonts.regular).fillColor(color)
+        .text(
+          `${prefix} ${diag.descripcion}${diag.codigo ? ` (${diag.codigo})` : ''}`,
+          70
+        );
+    });
+
+    doc.moveDown(1);
+  }
+
+  _addReceta(doc, receta) {
+    doc.fontSize(11).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text('Receta Médica', 50);
+    doc.moveDown(0.5);
+
+    receta.items.forEach((item, idx) => {
+      doc.fontSize(10).font(this.fonts.bold).fillColor(this.colors.textDark)
+        .text(`${idx + 1}. ${item.medicamento}`, 70);
+      
+      const detalles = [];
+      if (item.dosis) detalles.push(`Dosis: ${item.dosis}`);
+      if (item.frecuencia) detalles.push(`Frecuencia: ${item.frecuencia}`);
+      if (item.duracion) detalles.push(`Duración: ${item.duracion}`);
+      
+      doc.fontSize(9).font(this.fonts.regular)
+        .text(detalles.join(' | '), 85);
+      doc.moveDown(0.5);
+    });
+
+    if (receta.indicaciones_generales) {
+      doc.fontSize(9).font(this.fonts.italic).fillColor(this.colors.secondary)
+        .text(`Indicaciones: ${receta.indicaciones_generales}`, 70);
+    }
+
+    doc.moveDown(1);
+  }
+
+  _extractSignosVitalesData(consultas) {
+    return consultas
+      .filter(c => c.signosVitales)
+      .map(c => ({
+        fecha: moment(c.created_at).format('DD/MM/YY'),
+        pa_sistolica: c.signosVitales.presion_sistolica,
+        pa_diastolica: c.signosVitales.presion_diastolica,
+        fc: c.signosVitales.frecuencia_cardiaca,
+        peso: c.signosVitales.peso_kg
+      }))
+      .reverse();
+  }
+
+  async _generateSignosVitalesChart(data) {
     const width = 600;
     const height = 400;
     const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height });
 
-    const labels = porMes?.map(m => m.periodo) || [];
-    const data = porMes?.map(m => m.cantidad) || [];
-
     const configuration = {
       type: 'line',
       data: {
-        labels,
-        datasets: [{
-          label: 'Sacramentos por mes',
-          data,
-          borderColor: '#ab47bc',
-          backgroundColor: 'rgba(171, 71, 188, 0.1)',
-          tension: 0.4,
-          fill: true
-        }]
+        labels: data.map(d => d.fecha),
+        datasets: [
+          {
+            label: 'PA Sistólica',
+            data: data.map(d => d.pa_sistolica),
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            tension: 0.4
+          },
+          {
+            label: 'PA Diastólica',
+            data: data.map(d => d.pa_diastolica),
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            tension: 0.4
+          },
+          {
+            label: 'FC (lpm)',
+            data: data.map(d => d.fc),
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+            tension: 0.4
+          }
+        ]
       },
       options: {
+        responsive: false,
         plugins: {
           title: {
             display: true,
-            text: 'Evolución temporal de sacramentos',
+            text: 'Evolución de Signos Vitales',
             font: { size: 16 }
           },
           legend: {
@@ -367,10 +415,7 @@ class PDFGenerator {
         },
         scales: {
           y: {
-            beginAtZero: true,
-            ticks: {
-              precision: 0
-            }
+            beginAtZero: true
           }
         }
       }
@@ -379,26 +424,188 @@ class PDFGenerator {
     return await chartJSNodeCanvas.renderToBuffer(configuration);
   }
 
-  async _generatePieOrBarChart(labels, data, title) {
+  // ============================================
+  // AGENDA DEL MÉDICO
+  // ============================================
+  
+  async generarAgendaMedicoPDF(datos, filtro) {
+    const timestamp = Date.now();
+    const fileName = `agenda_medico_${timestamp}.pdf`;
+    const filePath = path.join(this.outputDir, fileName);
+    
+    const doc = new PDFDocument({ autoFirstPage: false });
+    doc.pipe(fs.createWriteStream(filePath));
+
+    let pageNumber = 1;
+
+    // Portada
+    this._addPortadaMedica(doc, 'Agenda Médica');
+    
+    // Páginas con citas
+    doc.addPage();
+    this._addHeaderMedico(doc, 'Agenda Médica');
+    
+    // Info del médico
+    doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
+      .text(`Dr(a). ${datos.medico.nombre} ${datos.medico.apellidos}`, 50);
+    doc.fontSize(11).font(this.fonts.regular).fillColor(this.colors.secondary)
+      .text(datos.medico.especialidad || '', 50);
+    doc.moveDown(0.5);
+
+    // Período
+    doc.fontSize(10).font(this.fonts.italic)
+      .text(
+        `Período: ${moment(filtro.fecha_desde).format('DD/MM/YYYY')} - ${moment(filtro.fecha_hasta).format('DD/MM/YYYY')}`,
+        50
+      );
+    doc.moveDown(1);
+
+    // Tabla de citas
+    this._addCitasTable(doc, datos.citas, () => {
+      this._addFooter(doc, pageNumber++);
+      doc.addPage();
+      this._addHeaderMedico(doc, 'Agenda Médica');
+    });
+    
+    this._addFooter(doc, pageNumber++);
+
+    // Gráfica de citas por estado
+    try {
+      const chartImage = await this._generateCitasPorEstadoChart(datos.citas);
+      doc.addPage();
+      this._addHeaderMedico(doc, 'Agenda Médica');
+      doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
+        .text('Distribución de Citas por Estado', 50);
+      doc.moveDown(1);
+      this._addChartToPage(doc, chartImage);
+      this._addFooter(doc, pageNumber++);
+    } catch (err) {
+      console.error('Error generando gráfica de citas:', err);
+    }
+
+    doc.end();
+    return this._createFileInfoPromise(fileName, filePath);
+  }
+
+  _addCitasTable(doc, citas, onNewPage) {
+    const startX = 50;
+    const baseRowHeight = 25;
+    let y = doc.y;
+    const footerHeight = 50;
+
+    const columnWidths = {
+      fecha: 80,
+      hora: 60,
+      paciente: 150,
+      tipo: 80,
+      estado: 70
+    };
+
+    const totalWidth = Object.values(columnWidths).reduce((sum, w) => sum + w, 0);
+
+    // Header
+    const drawHeader = () => {
+      let currentX = startX;
+      doc.rect(startX, y, totalWidth, baseRowHeight)
+        .fillColor(this.colors.primary).fill();
+      
+      doc.font(this.fonts.bold).fontSize(10).fillColor('white');
+      
+      const headers = {
+        fecha: 'Fecha',
+        hora: 'Hora',
+        paciente: 'Paciente',
+        tipo: 'Tipo',
+        estado: 'Estado'
+      };
+
+      Object.entries(headers).forEach(([key, title]) => {
+        doc.text(title, currentX + 5, y + 8, {
+          width: columnWidths[key] - 10
+        });
+        currentX += columnWidths[key];
+      });
+      
+      y += baseRowHeight;
+    };
+
+    drawHeader();
+    doc.font(this.fonts.regular).fontSize(9).fillColor(this.colors.textDark);
+
+    citas.forEach((cita, idx) => {
+      if (y + baseRowHeight + footerHeight > doc.page.height) {
+        onNewPage();
+        y = doc.y;
+        drawHeader();
+      }
+
+      if (idx % 2 === 0) {
+        doc.rect(startX, y, totalWidth, baseRowHeight)
+          .fillColor(this.colors.light).fill();
+      }
+
+      let currentX = startX;
+      
+      // Fecha
+      doc.fillColor(this.colors.textDark).text(
+        moment(cita.fecha_hora).format('DD/MM/YYYY'),
+        currentX + 5, y + 8, { width: columnWidths.fecha - 10 }
+      );
+      currentX += columnWidths.fecha;
+
+      // Hora
+      doc.text(
+        moment(cita.fecha_hora).format('HH:mm'),
+        currentX + 5, y + 8, { width: columnWidths.hora - 10 }
+      );
+      currentX += columnWidths.hora;
+
+      // Paciente
+      doc.text(
+        `${cita.paciente?.nombre} ${cita.paciente?.apellidos}`,
+        currentX + 5, y + 8, { width: columnWidths.paciente - 10 }
+      );
+      currentX += columnWidths.paciente;
+
+      // Tipo
+      doc.text(
+        cita.tipo_cita || 'N/A',
+        currentX + 5, y + 8, { width: columnWidths.tipo - 10 }
+      );
+      currentX += columnWidths.tipo;
+
+      // Estado
+      const estadoColors = {
+        programada: this.colors.warning,
+        completada: this.colors.success,
+        cancelada: this.colors.danger
+      };
+      doc.fillColor(estadoColors[cita.estado] || this.colors.textDark).text(
+        cita.estado,
+        currentX + 5, y + 8, { width: columnWidths.estado - 10 }
+      );
+
+      y += baseRowHeight;
+    });
+  }
+
+  async _generateCitasPorEstadoChart(citas) {
+    const estadoCounts = citas.reduce((acc, cita) => {
+      acc[cita.estado] = (acc[cita.estado] || 0) + 1;
+      return acc;
+    }, {});
+
     const width = 600;
     const height = 400;
-    const chartJSNodeCanvas = new ChartJSNodeCanvas({
-      width,
-      height
-    });
-
-    const total = data.reduce((sum, val) => sum + (val || 0), 0);
+    const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height });
 
     const configuration = {
-      type: labels.length === 1 ? 'bar' : 'pie',
+      type: 'pie',
       data: {
-        labels,
+        labels: Object.keys(estadoCounts),
         datasets: [{
-          label: 'Sacramentos',
-          data,
-          backgroundColor: labels.length === 1 ? ['#ab47bc'] : [
-            '#ab47bc', '#42a5f5', '#ffca28', '#ef5350', '#66bb6a', '#26c6da', '#ffa726'
-          ],
+          data: Object.values(estadoCounts),
+          backgroundColor: ['#f59e0b', '#10b981', '#ef4444'],
           borderColor: '#fff',
           borderWidth: 2
         }]
@@ -408,106 +615,112 @@ class PDFGenerator {
         plugins: {
           title: {
             display: true,
-            text: title,
-            font: { size: 16, weight: 'bold' }
+            text: 'Citas por Estado',
+            font: { size: 16 }
           },
           legend: {
-            display: labels.length > 1,
-            position: 'right',
-            labels: {
-              padding: 15,
-              font: { size: 12 }
-            }
+            display: true,
+            position: 'right'
           }
-        },
-        scales: labels.length === 1 ? {
-          y: {
-            beginAtZero: true,
-            max: Math.max(...(data || [1])) + 1
-          }
-        } : {}
+        }
       }
     };
 
     return await chartJSNodeCanvas.renderToBuffer(configuration);
   }
 
-  _addChartToPage(doc, chartImage) {
-    const chartWidth = 500;
-    const chartHeight = 300;
-    const x = (doc.page.width - chartWidth) / 2;
-    const y = doc.y + 20;
+  // ============================================
+  // DESEMPEÑO DE MÉDICOS (ADMIN)
+  // ============================================
+  
+  async generarDesempenoMedicosPDF(datos, filtro) {
+    const timestamp = Date.now();
+    const fileName = `desempeno_medicos_${timestamp}.pdf`;
+    const filePath = path.join(this.outputDir, fileName);
     
-    try {
-      doc.image(chartImage, x, y, {
-        width: chartWidth,
-        height: chartHeight
-      });
-      doc.moveDown(16);
-    } catch (err) {
-      console.error('Error agregando imagen de gráfica:', err.message);
+    const doc = new PDFDocument({ autoFirstPage: false });
+    doc.pipe(fs.createWriteStream(filePath));
+
+    let pageNumber = 1;
+
+    // Portada
+    this._addPortadaMedica(doc, 'Desempeño Médicos');
+    
+    // Tabla de desempeño
+    doc.addPage();
+    this._addHeaderMedico(doc, 'Reporte de Desempeño - Médicos');
+    
+    if (filtro.fecha_desde && filtro.fecha_hasta) {
+      doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.secondary)
+        .text(
+          `Período: ${moment(filtro.fecha_desde).format('DD/MM/YYYY')} - ${moment(filtro.fecha_hasta).format('DD/MM/YYYY')}`,
+          50
+        );
+      doc.moveDown(1);
     }
+
+    this._addDesempenoTable(doc, datos, () => {
+      this._addFooter(doc, pageNumber++);
+      doc.addPage();
+      this._addHeaderMedico(doc, 'Reporte de Desempeño - Médicos');
+    });
+    
+    this._addFooter(doc, pageNumber++);
+
+    // Gráfica comparativa
+    if (datos.length > 1) {
+      try {
+        const chartImage = await this._generateDesempenoChart(datos);
+        doc.addPage();
+        this._addHeaderMedico(doc, 'Reporte de Desempeño - Médicos');
+        doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.primary)
+          .text('Comparativa de Consultas por Médico', 50);
+        doc.moveDown(1);
+        this._addChartToPage(doc, chartImage);
+        this._addFooter(doc, pageNumber++);
+      } catch (err) {
+        console.error('Error generando gráfica de desempeño:', err);
+      }
+    }
+
+    doc.end();
+    return this._createFileInfoPromise(fileName, filePath);
   }
 
-  _addTable(doc, sacramentos, fields, onNewPage) {
-    const columnTitles = {
-      id_sacramento: 'ID',
-      fecha_sacramento: 'Fecha',
-      tipo_sacramento: 'Tipo',
-      foja: 'Foja',
-      numero: 'Nº',
-      parroquia: 'Parroquia',
-      usuario: 'Registrado por',
-      activo: 'Estado',
-      fecha_registro: 'F. Registro',
-      fecha_actualizacion: 'F. Actualización'
-    };
-
-    const columnWidths = {
-      id_sacramento: 35,
-      fecha_sacramento: 70,
-      tipo_sacramento: 80,
-      foja: 45,
-      numero: 35,
-      parroquia: 100,
-      usuario: 90,
-      activo: 50,
-      fecha_registro: 70,
-      fecha_actualizacion: 70
-    };
-
+  _addDesempenoTable(doc, datos, onNewPage) {
     const startX = 50;
-    const baseRowHeight = 20;
+    const baseRowHeight = 25;
     let y = doc.y;
     const footerHeight = 50;
 
-    const totalUsedWidth = fields.reduce((sum, field) => sum + (columnWidths[field] || 70), 0);
-    const availableWidth = doc.page.width - 100;
+    const columnWidths = {
+      medico: 150,
+      consultas: 80,
+      pacientes: 80,
+      promedio: 100
+    };
 
-    let adjustmentFactor = 1;
-    if (totalUsedWidth < availableWidth) {
-      adjustmentFactor = availableWidth / totalUsedWidth;
-    }
-
-    const adjustedWidths = {};
-    fields.forEach(field => {
-      adjustedWidths[field] = (columnWidths[field] || 70) * adjustmentFactor;
-    });
+    const totalWidth = Object.values(columnWidths).reduce((sum, w) => sum + w, 0);
 
     const drawHeader = () => {
       let currentX = startX;
-      doc.rect(startX, y, availableWidth, baseRowHeight)
+      doc.rect(startX, y, totalWidth, baseRowHeight)
         .fillColor(this.colors.primary).fill();
       
       doc.font(this.fonts.bold).fontSize(10).fillColor('white');
       
-      fields.forEach((field) => {
-        const colWidth = adjustedWidths[field];
-        doc.text(columnTitles[field] || field, currentX + 3, y + 5, {
-          width: colWidth - 6,
-          ellipsis: true
+      const headers = {
+        medico: 'Médico',
+        consultas: 'Consultas',
+        pacientes: 'Pacientes',
+        promedio: 'Promedio/día'
+      };
+
+      Object.entries(headers).forEach(([key, title]) => {
+        doc.text(title, currentX + 5, y + 8, {
+          width: columnWidths[key] - 10
         });
-        currentX += colWidth;
+        currentX += columnWidths[key];
       });
       
       y += baseRowHeight;
@@ -516,207 +729,367 @@ class PDFGenerator {
     drawHeader();
     doc.font(this.fonts.regular).fontSize(9).fillColor(this.colors.textDark);
 
-    sacramentos.forEach((sacramento, idx) => {
-      let maxLines = 1;
-      let needsMultipleLines = false;
-      
-      fields.forEach((field) => {
-        const colWidth = adjustedWidths[field];
-        let val = this._getFieldValue(sacramento, field);
-        
-        const availableTextWidth = colWidth - 6;
-        const words = val.split(' ');
-        let currentLine = '';
-        let lines = 1;
-        
-        for (let word of words) {
-          const testLine = currentLine + (currentLine ? ' ' : '') + word;
-          const testWidth = doc.widthOfString(testLine);
-          
-          if (testWidth > availableTextWidth && currentLine !== '') {
-            lines++;
-            currentLine = word;
-          } else {
-            currentLine = testLine;
-          }
-        }
-        
-        if (lines > 1) {
-          needsMultipleLines = true;
-          maxLines = Math.max(maxLines, lines);
-        }
-      });
-      
-      const rowHeight = needsMultipleLines ? 
-        Math.max(baseRowHeight, maxLines * 12 + 8) : 
-        baseRowHeight;
-      
-      if (y + rowHeight + footerHeight > doc.page.height) {
+    datos.forEach((medico, idx) => {
+      if (y + baseRowHeight + footerHeight > doc.page.height) {
         onNewPage();
         y = doc.y;
         drawHeader();
       }
 
       if (idx % 2 === 0) {
-        doc.rect(startX, y, availableWidth, rowHeight)
+        doc.rect(startX, y, totalWidth, baseRowHeight)
           .fillColor(this.colors.light).fill();
       }
 
       let currentX = startX;
-      fields.forEach((field) => {
-        const colWidth = adjustedWidths[field];
-        let val = this._getFieldValue(sacramento, field);
-        
-        if (field === 'activo') {
-          doc.fillColor(sacramento.activo ? '#66bb6a' : '#ef5350');
-        } else {
-          doc.fillColor(this.colors.textDark);
+      
+      doc.fillColor(this.colors.textDark).text(
+        medico.nombre_medico,
+        currentX + 5, y + 8, { width: columnWidths.medico - 10 }
+      );
+      currentX += columnWidths.medico;
+
+      doc.text(
+        medico.total_consultas.toString(),
+        currentX + 5, y + 8, { width: columnWidths.consultas - 10 }
+      );
+      currentX += columnWidths.consultas;
+
+      doc.text(
+        medico.pacientes_unicos.toString(),
+        currentX + 5, y + 8, { width: columnWidths.pacientes - 10 }
+      );
+      currentX += columnWidths.pacientes;
+
+      doc.text(
+        medico.promedio_consultas_dia.toFixed(2),
+        currentX + 5, y + 8, { width: columnWidths.promedio - 10 }
+      );
+
+      y += baseRowHeight;
+    });
+  }
+
+async _generateDesempenoChart(datos) {
+  const width = 600;
+  const height = 400;
+  const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height });
+
+  const configuration = {
+    type: 'bar',
+    data: {
+      labels: datos.map(d => d.nombre_medico.split(' ')[0]),
+      datasets: [{
+        label: 'Total de Consultas',
+        data: datos.map(d => d.total_consultas),
+        backgroundColor: '#2563eb',
+        borderColor: '#1e40af',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Consultas por Médico',
+          font: { size: 16 }
+        },
+        legend: {
+          display: false
         }
-        
-        doc.text(val, currentX + 3, y + 5, {
-          width: colWidth - 6,
-          height: rowHeight - 10,
-          align: 'left',
-          ellipsis: false,
-          lineBreak: true
-        });
-        
-        currentX += colWidth;
-      });
-
-      y += rowHeight;
-    });
-  }
-
-  _getFieldValue(sacramento, field) {
-    let val = '';
-    
-    try {
-      switch(field) {
-        case 'id_sacramento':
-          val = sacramento?.id_sacramento?.toString() || '';
-          break;
-        case 'fecha_sacramento':
-          val = sacramento?.fecha_sacramento ? moment(sacramento.fecha_sacramento).format('DD/MM/YYYY') : '';
-          break;
-        case 'tipo_sacramento':
-          val = sacramento?.tipoSacramento?.nombre || '';
-          break;
-        case 'foja':
-          val = sacramento?.foja || '';
-          break;
-        case 'numero':
-          val = sacramento?.numero?.toString() || '';
-          break;
-        case 'parroquia':
-          val = sacramento?.parroquia?.nombre || '';
-          break;
-        case 'usuario':
-          if (sacramento?.usuario) {
-            val = `${sacramento.usuario.nombre || ''} ${sacramento.usuario.apellido_paterno || ''}`.trim();
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0
           }
-          break;
-        case 'activo':
-          val = sacramento?.activo ? '✓ Activo' : '✗ Inactivo';
-          break;
-        case 'fecha_registro':
-          val = sacramento?.fecha_registro ? moment(sacramento.fecha_registro).format('DD/MM/YYYY HH:mm') : '';
-          break;
-        case 'fecha_actualizacion':
-          val = sacramento?.fecha_actualizacion ? moment(sacramento.fecha_actualizacion).format('DD/MM/YYYY HH:mm') : '';
-          break;
-        default:
-          val = sacramento?.[field]?.toString() || '';
+        }
       }
-    } catch (error) {
-      console.error(`Error al obtener valor de campo ${field}:`, error);
-      val = '';
     }
-    
-    return val;
-  }
+  };
 
-  _addPortada(doc) {
-    const portadaPath = path.join(__dirname, '../assets/portadaof3.png');
-    if (fs.existsSync(portadaPath)) {
-      doc.addPage({ size: 'A4', margin: 0 });
-      doc.image(portadaPath, 0, 0, {
-        width: doc.page.width,
-        height: doc.page.height
-      });
-    }
-  }
+  return await chartJSNodeCanvas.renderToBuffer(configuration);
+}
+// ============================================
+// RESUMEN DE CONSULTAS
+// ============================================
+async generarResumenConsultasPDF(consultas, filtro) {
+const timestamp = Date.now();
+const fileName = `resumen_consultas_${timestamp}.pdf`;
+const filePath = path.join(this.outputDir, fileName);
+const doc = new PDFDocument({ autoFirstPage: false });
+doc.pipe(fs.createWriteStream(filePath));
 
-  _addHeader(doc, titulo = 'Reporte de Sacramentos') {
-    const logoPath = './src/assets/arquidiocesis-24.png';
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 50, 30, { width: 70 });
-    }
-    
-    doc.fontSize(22).font(this.fonts.bold).fillColor(this.colors.primary)
-      .text(titulo, 100, 40, { align: 'center' });
-    doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.secondary)
-      .text(`Generado: ${moment().format('DD/MM/YYYY HH:mm')}`, { align: 'right' });
+let pageNumber = 1;
 
-    const y = Math.max(doc.y + 10, 100);
-    doc.strokeColor(this.colors.accent).lineWidth(1)
-      .moveTo(50, y).lineTo(doc.page.width - 50, y).stroke();
-    doc.moveDown(4);
-  }
+this._addPortadaMedica(doc, 'Resumen de Consultas');
 
-  _addFooter(doc, pageNumber) {
-    const text = `Sistema de Gestión de Sacramentos | Página ${pageNumber}`;
-    const fontSize = 8;
-    const y = doc.page.height - 30;
+doc.addPage();
+this._addHeaderMedico(doc, 'Resumen de Consultas');
 
-    doc.save();
-
-    doc.strokeColor(this.colors.primary)
-      .lineWidth(1)
-      .moveTo(50, y - 10)
-      .lineTo(doc.page.width - 50, y - 10)
-      .stroke();
-
-    doc.font(this.fonts.italic)
-      .fontSize(fontSize)
-      .fillColor(this.colors.secondary);
-
-    const textWidth = doc.widthOfString(text);
-    const x = (doc.page.width - textWidth) / 2;
-
-    doc.text(text, x, y, {
-      lineBreak: false
-    });
-
-    doc.restore();
-  }
-
-  _createFileInfoPromise(fileName, filePath) {
-    return new Promise((resolve, reject) => {
-      const stream = fs.createReadStream(filePath);
-      stream.on('error', err => reject(err));
-      stream.on('open', () => {
-        setTimeout(() => fs.unlink(filePath, () => {}), this.fileRetentionTime);
-        resolve({ fileName, filePath, downloadUrl: `/download/${fileName}` });
-      });
-    });
-  }
-
-  _startCleanupScheduler() {
-    this._cleanupOldFiles();
-    setInterval(() => this._cleanupOldFiles(), this.cleanupInterval);
-  }
-
-  _cleanupOldFiles() {
-    if (!fs.existsSync(this.uploadDir)) return;
-    const now = Date.now();
-    fs.readdirSync(this.uploadDir).forEach(file => {
-      const filePath = path.join(this.uploadDir, file);
-      if (fs.statSync(filePath).mtimeMs < now - this.cleanupInterval) {
-        fs.unlinkSync(filePath);
-      }
-    });
-  }
+if (filtro.fecha_desde && filtro.fecha_hasta) {
+  doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.secondary)
+    .text(
+      `Período: ${moment(filtro.fecha_desde).format('DD/MM/YYYY')} - ${moment(filtro.fecha_hasta).format('DD/MM/YYYY')}`,
+      50
+    );
+  doc.moveDown(1);
 }
 
+// Lista de consultas
+consultas.forEach((consulta, idx) => {
+  if (doc.y > doc.page.height - 150) {
+    this._addFooter(doc, pageNumber++);
+    doc.addPage();
+    this._addHeaderMedico(doc, 'Resumen de Consultas');
+  }
+
+  this._addConsultaResumen(doc, consulta);
+});
+
+this._addFooter(doc, pageNumber++);
+
+doc.end();
+return this._createFileInfoPromise(fileName, filePath);
+}
+_addConsultaResumen(doc, consulta) {
+const boxY = doc.y;
+const boxHeight = 80;
+doc.rect(50, boxY, doc.page.width - 100, boxHeight)
+  .fillColor(this.colors.light).fill();
+
+let currentY = boxY + 10;
+
+doc.fontSize(11).font(this.fonts.bold).fillColor(this.colors.primary)
+  .text(
+    `${moment(consulta.created_at).format('DD/MM/YYYY HH:mm')}`,
+    70, currentY
+  );
+
+if (consulta.paciente) {
+  doc.fontSize(9).font(this.fonts.regular).fillColor(this.colors.textDark)
+    .text(
+      `Paciente: ${consulta.paciente.nombre} ${consulta.paciente.apellidos}`,
+      70, currentY + 15
+    );
+}
+
+if (consulta.medico) {
+  doc.text(
+    `Médico: Dr(a). ${consulta.medico.nombre} ${consulta.medico.apellidos}`,
+    70, currentY + 28
+  );
+}
+
+if (consulta.motivo) {
+  doc.text(
+    `Motivo: ${consulta.motivo.substring(0, 60)}${consulta.motivo.length > 60 ? '...' : ''}`,
+    70, currentY + 41
+  );
+}
+
+doc.moveDown(6);
+}
+// ============================================
+// DASHBOARD DE ESTADÍSTICAS (ADMIN)
+// ============================================
+async generarDashboardEstadisticasPDF(estadisticas, filtro) {
+const timestamp = Date.now();
+const fileName = `dashboard_estadisticas_${timestamp}.pdf`;
+const filePath = path.join(this.outputDir, fileName);
+const doc = new PDFDocument({ autoFirstPage: false });
+doc.pipe(fs.createWriteStream(filePath));
+
+let pageNumber = 1;
+
+this._addPortadaMedica(doc, 'Dashboard Estadísticas');
+
+doc.addPage();
+this._addHeaderMedico(doc, 'Dashboard - Estadísticas Generales');
+
+if (filtro.fecha_desde && filtro.fecha_hasta) {
+  doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.secondary)
+    .text(
+      `Período: ${moment(filtro.fecha_desde).format('DD/MM/YYYY')} - ${moment(filtro.fecha_hasta).format('DD/MM/YYYY')}`,
+      50
+    );
+  doc.moveDown(1);
+}
+
+// Cards de estadísticas
+this._addEstadisticasCards(doc, estadisticas);
+
+this._addFooter(doc, pageNumber++);
+
+doc.end();
+return this._createFileInfoPromise(fileName, filePath);
+}
+_addEstadisticasCards(doc, stats) {
+const cards = [
+{ label: 'Médicos Activos', value: stats.total_medicos_activos, color: this.colors.primary },
+{ label: 'Pacientes', value: stats.total_pacientes, color: this.colors.accent },
+{ label: 'Consultas Totales', value: stats.total_consultas, color: this.colors.success },
+{ label: 'Consultas Mes Actual', value: stats.consultas_mes_actual, color: this.colors.warning },
+{ label: 'Citas Programadas', value: stats.citas_programadas, color: this.colors.secondary },
+{ label: 'Citas Completadas', value: stats.citas_completadas, color: this.colors.success }
+];
+const cardWidth = 170;
+const cardHeight = 80;
+const spacing = 20;
+const startX = 50;
+let currentX = startX;
+let currentY = doc.y;
+
+cards.forEach((card, idx) => {
+  if (idx > 0 && idx % 3 === 0) {
+    currentX = startX;
+    currentY += cardHeight + spacing;
+  }
+
+  doc.rect(currentX, currentY, cardWidth, cardHeight)
+    .fillColor(card.color).fill();
+
+  doc.fontSize(20).font(this.fonts.bold).fillColor('white')
+    .text(card.value.toString(), currentX + 10, currentY + 15);
+
+  doc.fontSize(10).font(this.fonts.regular)
+    .text(card.label, currentX + 10, currentY + 45, {
+      width: cardWidth - 20
+    });
+
+  currentX += cardWidth + spacing;
+});
+
+doc.moveDown(12);
+}
+// ============================================
+// UTILIDADES COMUNES
+// ============================================
+_addPortadaMedica(doc, titulo) {
+doc.addPage({ size: 'A4', margin: 0 });
+// Fondo
+doc.rect(0, 0, doc.page.width, doc.page.height)
+  .fillColor(this.colors.primary).fill();
+
+// Título
+doc.fontSize(40).font(this.fonts.bold).fillColor('white')
+  .text(titulo, 0, doc.page.height / 2 - 50, {
+    align: 'center',
+    width: doc.page.width
+  });
+
+// Subtítulo
+doc.fontSize(16).font(this.fonts.regular)
+  .text('Sistema de Gestión Médica', 0, doc.page.height / 2 + 20, {
+    align: 'center',
+    width: doc.page.width
+  });
+
+// Fecha
+doc.fontSize(12).font(this.fonts.italic)
+  .text(
+    moment().format('DD/MM/YYYY HH:mm'),
+    0, doc.page.height - 80,
+    {
+      align: 'center',
+      width: doc.page.width
+    }
+  );
+}
+_addHeaderMedico(doc, titulo) {
+doc.fontSize(18).font(this.fonts.bold).fillColor(this.colors.primary)
+.text(titulo, 50, 40, { align: 'left' });
+doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.secondary)
+  .text(
+    `Generado: ${moment().format('DD/MM/YYYY HH:mm')}`,
+    50, 65,
+    { align: 'right' }
+  );
+
+const y = 80;
+doc.strokeColor(this.colors.accent).lineWidth(2)
+  .moveTo(50, y).lineTo(doc.page.width - 50, y).stroke();
+doc.moveDown(3);
+}
+_addFooter(doc, pageNumber) {
+const text = `Sistema de Gestión Médica | Página ${pageNumber}`;
+const fontSize = 8;
+const y = doc.page.height - 30;
+doc.save();
+
+doc.strokeColor(this.colors.primary)
+  .lineWidth(1)
+  .moveTo(50, y - 10)
+  .lineTo(doc.page.width - 50, y - 10)
+  .stroke();
+
+doc.font(this.fonts.italic)
+  .fontSize(fontSize)
+  .fillColor(this.colors.secondary);
+
+const textWidth = doc.widthOfString(text);
+const x = (doc.page.width - textWidth) / 2;
+
+doc.text(text, x, y, {
+  lineBreak: false
+});
+
+doc.restore();
+}
+_addChartToPage(doc, chartImage) {
+const chartWidth = 500;
+const chartHeight = 300;
+const x = (doc.page.width - chartWidth) / 2;
+const y = doc.y + 20;
+try {
+  doc.image(chartImage, x, y, {
+    width: chartWidth,
+    height: chartHeight
+  });
+  doc.moveDown(16);
+} catch (err) {
+  console.error('Error agregando gráfica:', err);
+}
+}
+_createFileInfoPromise(fileName, filePath) {
+return new Promise((resolve, reject) => {
+const stream = fs.createReadStream(filePath);
+stream.on('error', err => reject(err));
+stream.on('open', () => {
+setTimeout(() => {
+if (fs.existsSync(filePath)) {
+fs.unlink(filePath, () => {});
+}
+}, this.fileRetentionTime);
+    resolve({ 
+      fileName, 
+      filePath, 
+      downloadUrl: `/download/${fileName}` 
+    });
+  });
+});
+}
+_startCleanupScheduler() {
+this._cleanupOldFiles();
+setInterval(() => this._cleanupOldFiles(), this.cleanupInterval);
+}
+_cleanupOldFiles() {
+[this.outputDir, this.tempDir].forEach(dir => {
+if (!fs.existsSync(dir)) return;
+  const now = Date.now();
+  fs.readdirSync(dir).forEach(file => {
+    const filePath = path.join(dir, file);
+    const stats = fs.statSync(filePath);
+    
+    if (stats.mtimeMs < now - this.cleanupInterval) {
+      fs.unlinkSync(filePath);
+      console.log(`Archivo eliminado: ${file}`);
+    }
+  });
+});
+}
+}
 module.exports = new PDFGenerator();
+      

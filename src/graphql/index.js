@@ -1,7 +1,7 @@
-const sacramentoSchema = require('./schemas/sacramento');
-const sacramentoResolvers = require('./resolvers/sacramento');
+const reporteMedicoSchema = require('./schemas/reporteMedico');
+const reporteMedicoResolvers = require('./resolvers/reporteMedico');
 
 module.exports = {
-  typeDefs: [sacramentoSchema],
-  resolvers: [sacramentoResolvers],
+  typeDefs: [reporteMedicoSchema],
+  resolvers: [reporteMedicoResolvers],
 };
