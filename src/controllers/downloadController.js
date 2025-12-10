@@ -5,7 +5,6 @@ const { REPORTS_OUTPUT_DIR } = require('../config');
 
 function setupDownloadRoutes(app) {
 
-  // Ruta principal de descarga
   app.get('/download/:fileName', (req, res) => {
     try {
       const fileName = req.params.fileName;
@@ -20,7 +19,6 @@ function setupDownloadRoutes(app) {
         });
       }
       
-      // Validar path traversal
       if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
         console.error('Intento de path traversal detectado');
         return res.status(400).json({ 
@@ -29,7 +27,6 @@ function setupDownloadRoutes(app) {
         });
       }
       
-      // Validar extensión de archivo (PDF o Excel)
       const allowedExtensions = ['.pdf', '.xlsx', '.xls', '.csv'];
       const fileExtension = path.extname(fileName).toLowerCase();
       
@@ -41,7 +38,6 @@ function setupDownloadRoutes(app) {
         });
       }
       
-      // Validar formato de nombre según tipo de reporte
       const validPatterns = [
         /^historia_clinica_.+_\d+\.pdf$/,
         /^agenda_medico_\d+\.pdf$/,
@@ -66,7 +62,7 @@ function setupDownloadRoutes(app) {
       const normalizedPath = path.normalize(filePath);
       const normalizedOutputDir = path.normalize(REPORTS_OUTPUT_DIR);
       
-      // Verificar que el archivo esté dentro del directorio permitido
+
       if (!normalizedPath.startsWith(normalizedOutputDir)) {
         console.error('Intento de acceso fuera del directorio permitido');
         return res.status(403).json({ 
@@ -75,7 +71,6 @@ function setupDownloadRoutes(app) {
         });
       }
       
-      // Verificar existencia del archivo
       if (!fs.existsSync(filePath)) {
         console.error(`Archivo no encontrado: ${fileName}`);
         return res.status(404).json({ 
@@ -90,7 +85,6 @@ function setupDownloadRoutes(app) {
       
       console.log(`Enviando archivo: ${fileName} (${fileSizeKB} KB)`);
       
-      // Configurar headers según tipo de archivo
       const mimeTypes = {
         '.pdf': 'application/pdf',
         '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -138,7 +132,7 @@ function setupDownloadRoutes(app) {
     }
   });
 
-  // Verificar si un archivo existe
+
   app.get('/download/check/:fileName', (req, res) => {
     try {
       const fileName = req.params.fileName;
@@ -198,7 +192,7 @@ function setupDownloadRoutes(app) {
     }
   });
   
-  // Listar todos los reportes disponibles
+
   app.get('/download/list/all', (req, res) => {
     try {
       if (!fs.existsSync(REPORTS_OUTPUT_DIR)) {

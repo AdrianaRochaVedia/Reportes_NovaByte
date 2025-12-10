@@ -8,10 +8,9 @@ class ExcelGenerator {
     this.outputDir = REPORTS_OUTPUT_DIR;
   }
 
-  // ============================================
+
   // DESEMPEÑO DE MÉDICOS EN EXCEL
-  // ============================================
-  
+ 
   async generarDesempenoMedicosExcel(datos, filtro) {
     const workbook = new ExcelJS.Workbook();
     
@@ -82,7 +81,6 @@ class ExcelGenerator {
 
     sheet.addRow([]);
 
-    // Headers de tabla
     const headerRow = sheet.addRow([
       'Médico',
       'Especialidad',
@@ -318,9 +316,7 @@ class ExcelGenerator {
     }
   }
 
-  // ============================================
   // REPORTE DE CONSULTAS EN EXCEL
-  // ============================================
   
   async generarConsultasExcel(consultas, filtro) {
     const workbook = new ExcelJS.Workbook();
@@ -442,9 +438,8 @@ class ExcelGenerator {
     };
   }
 
-  // ============================================
+
   // REPORTE DE PACIENTES EN EXCEL
-  // ============================================
   
   async generarPacientesExcel(pacientes) {
     const workbook = new ExcelJS.Workbook();

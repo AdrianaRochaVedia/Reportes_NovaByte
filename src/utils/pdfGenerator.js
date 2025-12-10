@@ -40,9 +40,9 @@ class PDFGenerator {
     });
   }
 
-  // ============================================
-  // HISTORIA CLÍNICA COMPLETA
-  // ============================================
+
+
+  //HISTORIAL CLINICO DE PACIENTE
   
   async generarHistoriaClinicaPDF(datos, filtro) {
     const timestamp = Date.now();
@@ -179,7 +179,7 @@ class PDFGenerator {
 
   _addAlergias(doc, alergias) {
     doc.fontSize(14).font(this.fonts.bold).fillColor(this.colors.danger)
-      .text('⚠️ Alergias', 50);
+      .text(' Alergias', 50);
     doc.moveDown(0.5);
 
     const boxY = doc.y;
@@ -424,9 +424,8 @@ class PDFGenerator {
     return await chartJSNodeCanvas.renderToBuffer(configuration);
   }
 
-  // ============================================
-  // AGENDA DEL MÉDICO
-  // ============================================
+
+  //Para agenda de medicos
   
   async generarAgendaMedicoPDF(datos, filtro) {
     const timestamp = Date.now();
@@ -629,10 +628,9 @@ class PDFGenerator {
     return await chartJSNodeCanvas.renderToBuffer(configuration);
   }
 
-  // ============================================
-  // DESEMPEÑO DE MÉDICOS (ADMIN)
-  // ============================================
-  
+
+  // DEsempeño de medicos admin
+
   async generarDesempenoMedicosPDF(datos, filtro) {
     const timestamp = Date.now();
     const fileName = `desempeno_medicos_${timestamp}.pdf`;
@@ -812,9 +810,10 @@ async _generateDesempenoChart(datos) {
 
   return await chartJSNodeCanvas.renderToBuffer(configuration);
 }
-// ============================================
-// RESUMEN DE CONSULTAS
-// ============================================
+
+
+//REsumen de consultas
+
 async generarResumenConsultasPDF(consultas, filtro) {
 const timestamp = Date.now();
 const fileName = `resumen_consultas_${timestamp}.pdf`;
@@ -892,9 +891,8 @@ if (consulta.motivo) {
 
 doc.moveDown(6);
 }
-// ============================================
-// DASHBOARD DE ESTADÍSTICAS (ADMIN)
-// ============================================
+
+//PAra el dashboard
 async generarDashboardEstadisticasPDF(estadisticas, filtro) {
 const timestamp = Date.now();
 const fileName = `dashboard_estadisticas_${timestamp}.pdf`;
@@ -964,9 +962,8 @@ cards.forEach((card, idx) => {
 
 doc.moveDown(12);
 }
-// ============================================
-// UTILIDADES COMUNES
-// ============================================
+
+// PAra lo de portadas y demas
 _addPortadaMedica(doc, titulo) {
 doc.addPage({ size: 'A4', margin: 0 });
 // Fondo

@@ -254,7 +254,6 @@ module.exports = {
         const filtrosParsed = filtros ? JSON.parse(filtros) : {};
         const opcionesParsed = opciones ? JSON.parse(opciones) : {};
         
-        // Lógica flexible según el tipo de reporte solicitado
         throw new Error('Reporte custom no implementado aún');
       } catch (error) {
         console.error('Error al generar reporte custom:', error);

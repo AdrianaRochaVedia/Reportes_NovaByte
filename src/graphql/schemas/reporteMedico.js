@@ -1,7 +1,6 @@
 const { gql } = require('apollo-server');
 
 const reporteMedicoSchema = gql`
-  # Tipos básicos
   type Perfil {
     id: ID!
     nombre: String
@@ -195,7 +194,6 @@ const reporteMedicoSchema = gql`
     generarDesempenoMedicosExcel(filtro: FiltroDesempenoMedico): ReporteResponse
     generarDashboardEstadisticasPDF(filtro: FiltroEstadisticasGenerales): ReporteResponse
     
-    # Reporte general (flexible)
     generarReporteCustom(
       tipo: String!
       formato: String!

@@ -1,11 +1,6 @@
 const moment = require('moment');
 
 class ReporteMedicoService {
-  
-  // ============================================
-  // MÉTODOS PARA OBTENER DATOS BÁSICOS
-  // ============================================
-  
   async getPaciente(id, supabase) {
     try {
       const { data, error } = await supabase
@@ -85,18 +80,13 @@ class ReporteMedicoService {
     }
   }
 
-  // ============================================
   // HISTORIA CLÍNICA COMPLETA
-  // ============================================
   
   async getHistoriaClinicaCompleta(filtro, supabase) {
     try {
       const pacienteId = filtro.paciente_id;
-
-      // 1. Datos del paciente
       const paciente = await this.getPaciente(pacienteId, supabase);
 
-      // 2. Antecedentes
       let antecedentes = [];
       if (filtro.incluir_antecedentes !== false) {
         const { data } = await supabase
@@ -106,7 +96,6 @@ class ReporteMedicoService {
         antecedentes = data || [];
       }
 
-      // 3. Alergias
       let alergias = [];
       if (filtro.incluir_alergias !== false) {
         const { data } = await supabase
@@ -116,7 +105,6 @@ class ReporteMedicoService {
         alergias = data || [];
       }
 
-      // 4. Consultas con toda la información relacionada
       let queryConsultas = supabase
         .from('consulta')
         .select(`
@@ -136,8 +124,6 @@ class ReporteMedicoService {
       queryConsultas = queryConsultas.order('created_at', { ascending: false });
 
       const { data: consultas } = await queryConsultas;
-
-      // 5. Para cada consulta, obtener diagnósticos, recetas, signos vitales
       const consultasEnriquecidas = await Promise.all(
         (consultas || []).map(async (consulta) => {
           // Diagnósticos
@@ -171,7 +157,6 @@ class ReporteMedicoService {
         })
       );
 
-      // 6. Exámenes (opcional)
       let examenes = [];
       if (filtro.incluir_examenes) {
         const consultasIds = consultasEnriquecidas.map(c => c.id);
@@ -200,9 +185,7 @@ class ReporteMedicoService {
     }
   }
 
-  // ============================================
   // AGENDA DEL MÉDICO
-  // ============================================
   
   async getAgendaMedico(filtro, supabase) {
     try {
@@ -245,18 +228,14 @@ class ReporteMedicoService {
     }
   }
 
-  // ============================================
+
   // ESTADÍSTICAS DEL MÉDICO
-  // ============================================
   
   async getEstadisticasMedico(filtro, supabase) {
     try {
       const medicoId = filtro.medico_id;
-
-      // Obtener info del médico
       const medico = await this.getMedico(medicoId, supabase);
 
-      // Query base para consultas
       let queryConsultas = supabase
         .from('consulta')
         .select('id, paciente_id, created_at')
@@ -282,7 +261,6 @@ class ReporteMedicoService {
         promedioDia = parseFloat((totalConsultas / dias).toFixed(2));
       }
 
-      // Obtener diagnósticos frecuentes
       const consultasIds = consultas?.map(c => c.id) || [];
       let diagnosticosFrecuentes = [];
       
@@ -317,13 +295,11 @@ class ReporteMedicoService {
     }
   }
 
-  // ============================================
   // DESEMPEÑO DE MÚLTIPLES MÉDICOS (ADMIN)
-  // ============================================
+
   
   async getDesempenoMedicos(filtro, supabase) {
     try {
-      // Obtener todos los médicos activos (o uno específico)
       let queryMedicos = supabase
         .from('perfil')
         .select('id, nombre, apellidos, especialidad, activo')
@@ -337,7 +313,7 @@ class ReporteMedicoService {
 
       const { data: medicos } = await queryMedicos;
 
-      // Para cada médico, calcular sus estadísticas
+      // Para cada medico sus estadisticas
       const desempeno = await Promise.all(
         (medicos || []).map(async (medico) => {
           return await this.getEstadisticasMedico(
@@ -354,9 +330,7 @@ class ReporteMedicoService {
     }
   }
 
-  // ============================================
   // ESTADÍSTICAS GENERALES (DASHBOARD ADMIN)
-  // ============================================
   
   async getEstadisticasGenerales(filtro, supabase) {
     try {
@@ -373,7 +347,7 @@ class ReporteMedicoService {
         .select('id', { count: 'exact', head: true })
         .eq('rol', 'paciente');
 
-      // Total consultas (con filtro de fecha si aplica)
+      // Total consultas 
       let queryConsultas = supabase
         .from('consulta')
         .select('id, created_at', { count: 'exact' });
@@ -424,9 +398,7 @@ class ReporteMedicoService {
     }
   }
 
-  // ============================================
   // CITAS POR ESTADO
-  // ============================================
   
   async getCitasPorEstado(filtro, supabase) {
     try {
