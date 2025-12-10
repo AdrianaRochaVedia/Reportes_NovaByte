@@ -6,42 +6,45 @@ const { REPORTS_OUTPUT_DIR } = require('../config');
 class ExcelGenerator {
   constructor() {
     this.outputDir = REPORTS_OUTPUT_DIR;
+
+    this.colors = {
+      primary: 'FFE79796',
+      primaryLight: 'FFF6DCE3',
+      primaryDark: 'FFD27F7E',
+      secondary: 'FF64748B',
+      success: 'FF10B981',
+      warning: 'FFF59E0B',
+      danger: 'FFEF4444',
+      light: 'FFFCE4EC',
+      accent: 'FFF6C8C7',
+      border: 'FFE5E7EB',
+      graySoft: 'FFF1F5F9',
+      white: 'FFFFFFFF'
+    };
   }
 
-
-  // DESEMPEÑO DE MÉDICOS EN EXCEL
- 
   async generarDesempenoMedicosExcel(datos, filtro) {
     const workbook = new ExcelJS.Workbook();
-    
-    // Metadatos
     workbook.creator = 'Sistema de Gestión Médica';
     workbook.lastModifiedBy = 'Sistema';
     workbook.created = new Date();
     workbook.modified = new Date();
 
-    // Hoja 1: Resumen General
     const sheetResumen = workbook.addWorksheet('Resumen General', {
-      properties: { tabColor: { argb: 'FF2563EB' } }
+      properties: { tabColor: { argb: this.colors.primary } }
     });
-
     this._addResumenSheet(sheetResumen, datos, filtro);
 
-    // Hoja 2: Detalle por Médico
     const sheetDetalle = workbook.addWorksheet('Detalle por Médico', {
-      properties: { tabColor: { argb: 'FF10B981' } }
+      properties: { tabColor: { argb: this.colors.accent } }
     });
+    this._addDetalleSheet(sheetDetalle, datos, filtro);
 
-    this._addDetalleSheet(sheetDetalle, datos);
-
-    // Hoja 3: Diagnósticos Frecuentes
     const sheetDiagnosticos = workbook.addWorksheet('Diagnósticos Frecuentes', {
-      properties: { tabColor: { argb: 'FFF59E0B' } }
+      properties: { tabColor: { argb: this.colors.warning } }
     });
-
     this._addDiagnosticosSheet(sheetDiagnosticos, datos);
 
-    // Guardar archivo
     const timestamp = Date.now();
     const fileName = `desempeno_medicos_${timestamp}.xlsx`;
     const filePath = path.join(this.outputDir, fileName);
@@ -56,22 +59,27 @@ class ExcelGenerator {
   }
 
   _addResumenSheet(sheet, datos, filtro) {
-    // Título
+    let diasPeriodo = null;
+    if (filtro?.fecha_desde && filtro?.fecha_hasta) {
+      const desde = moment(filtro.fecha_desde).startOf('day');
+      const hasta = moment(filtro.fecha_hasta).endOf('day');
+      diasPeriodo = hasta.diff(desde, 'days') + 1;
+    }
+
     sheet.mergeCells('A1:F1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = 'REPORTE DE DESEMPEÑO - MÉDICOS';
-    titleCell.font = { size: 18, bold: true, color: { argb: 'FF2563EB' } };
+    titleCell.font = { size: 18, bold: true, color: { argb: this.colors.primaryDark } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     sheet.getRow(1).height = 30;
 
-    // Información del reporte
     sheet.mergeCells('A2:F2');
     const infoCell = sheet.getCell('A2');
     infoCell.value = `Generado: ${moment().format('DD/MM/YYYY HH:mm')}`;
     infoCell.font = { size: 10, italic: true };
     infoCell.alignment = { horizontal: 'center' };
 
-    if (filtro.fecha_desde && filtro.fecha_hasta) {
+    if (filtro?.fecha_desde && filtro?.fecha_hasta) {
       sheet.mergeCells('A3:F3');
       const periodoCell = sheet.getCell('A3');
       periodoCell.value = `Período: ${moment(filtro.fecha_desde).format('DD/MM/YYYY')} - ${moment(filtro.fecha_hasta).format('DD/MM/YYYY')}`;
@@ -90,48 +98,72 @@ class ExcelGenerator {
       'Estado'
     ]);
 
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.font = { bold: true, color: { argb: this.colors.white } };
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF2563EB' }
+      fgColor: { argb: this.colors.primary }
     };
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.height = 25;
 
     // Datos
     datos.forEach((medico, idx) => {
+      const nombre = this._getNombreMedico(medico);
+      const especialidad = this._getEspecialidadMedico(medico);
+      const totalConsultas = medico.total_consultas || 0;
+      const pacientesUnicos = medico.pacientes_unicos || 0;
+      const promedio = this._getPromedioConsultas(medico, diasPeriodo);
+      const estado = this._getEstadoMedico(medico);
+
       const row = sheet.addRow([
-        medico.nombre_medico,
-        'N/A', // Especialidad (agregar si está disponible)
-        medico.total_consultas,
-        medico.pacientes_unicos,
-        medico.promedio_consultas_dia.toFixed(2),
-        medico.total_consultas > 0 ? 'Activo' : 'Inactivo'
+        nombre,
+        especialidad,
+        totalConsultas,
+        pacientesUnicos,
+        promedio,
+        estado
       ]);
 
-      // Alternar colores de fila
       if (idx % 2 === 0) {
         row.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFF1F5F9' }
+          fgColor: { argb: this.colors.light }
         };
       }
 
-      // Centrar datos numéricos
+
       row.getCell(3).alignment = { horizontal: 'center' };
       row.getCell(4).alignment = { horizontal: 'center' };
       row.getCell(5).alignment = { horizontal: 'center' };
-      row.getCell(6).alignment = { horizontal: 'center' };
+      row.getCell(5).numFmt = '0.00';
+
+      const estadoCell = row.getCell(6);
+      estadoCell.alignment = { horizontal: 'center' };
+
+      if (estado === 'Activo') {
+        estadoCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFD1FAE5' } 
+        };
+        estadoCell.font = { bold: true, color: { argb: this.colors.success } };
+      } else if (estado === 'Inactivo') {
+        estadoCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFEE2E2' } 
+        };
+        estadoCell.font = { bold: true, color: { argb: this.colors.danger } };
+      }
     });
 
-    // Fila de totales
     const totalRow = sheet.addRow([
       'TOTALES',
       '',
-      datos.reduce((sum, m) => sum + m.total_consultas, 0),
-      '', // No suma pacientes únicos (puede ser duplicado)
+      datos.reduce((sum, m) => sum + (m.total_consultas || 0), 0),
+      '',
       '',
       `${datos.length} médicos`
     ]);
@@ -140,63 +172,75 @@ class ExcelGenerator {
     totalRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FFE0E7FF' }
+      fgColor: { argb: this.colors.primaryLight }
     };
 
-    // Ajustar anchos de columna
     sheet.columns = [
       { width: 30 },
-      { width: 20 },
+      { width: 25 },
       { width: 18 },
       { width: 20 },
-      { width: 22 },
+      { width: 24 },
       { width: 15 }
     ];
 
-    // Bordes
+ 
     const lastRow = sheet.lastRow.number;
     for (let i = 5; i <= lastRow; i++) {
       for (let j = 1; j <= 6; j++) {
         const cell = sheet.getRow(i).getCell(j);
         cell.border = {
-          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-          bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+          top: { style: 'thin', color: { argb: this.colors.border } },
+          left: { style: 'thin', color: { argb: this.colors.border } },
+          bottom: { style: 'thin', color: { argb: this.colors.border } },
+          right: { style: 'thin', color: { argb: this.colors.border } }
         };
       }
     }
   }
 
-  _addDetalleSheet(sheet, datos) {
-    // Título
+  _addDetalleSheet(sheet, datos, filtro) {
     sheet.mergeCells('A1:E1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = 'DETALLE POR MÉDICO';
-    titleCell.font = { size: 16, bold: true, color: { argb: 'FF10B981' } };
+    titleCell.font = { size: 16, bold: true, color: { argb: this.colors.primaryDark } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     sheet.getRow(1).height = 25;
 
     sheet.addRow([]);
 
-    datos.forEach((medico, idx) => {
-      // Nombre del médico
+    let diasPeriodo = null;
+    if (filtro?.fecha_desde && filtro?.fecha_hasta) {
+      const desde = moment(filtro.fecha_desde).startOf('day');
+      const hasta = moment(filtro.fecha_hasta).endOf('day');
+      diasPeriodo = hasta.diff(desde, 'days') + 1;
+    }
+
+    datos.forEach((medico) => {
+      const nombre = this._getNombreMedico(medico);
+      const especialidad = this._getEspecialidadMedico(medico);
+      const estado = this._getEstadoMedico(medico);
+      const promedio = this._getPromedioConsultas(medico, diasPeriodo);
+
+
       sheet.mergeCells(`A${sheet.lastRow.number + 1}:E${sheet.lastRow.number + 1}`);
-      const medicoRow = sheet.addRow([medico.nombre_medico]);
-      medicoRow.font = { size: 12, bold: true, color: { argb: 'FF2563EB' } };
+      const medicoRow = sheet.addRow([nombre]);
+      medicoRow.font = { size: 12, bold: true, color: { argb: this.colors.primary } };
       medicoRow.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFE0E7FF' }
+        fgColor: { argb: this.colors.primaryLight }
       };
       medicoRow.height = 22;
 
-      // Métricas del médico
-      sheet.addRow(['Total de Consultas:', medico.total_consultas]);
-      sheet.addRow(['Pacientes Únicos:', medico.pacientes_unicos]);
-      sheet.addRow(['Promedio Consultas/Día:', medico.promedio_consultas_dia.toFixed(2)]);
 
-      // Diagnósticos frecuentes
+      sheet.addRow(['Especialidad:', especialidad]);
+      sheet.addRow(['Estado:', estado]);
+      sheet.addRow(['Total de Consultas:', medico.total_consultas || 0]);
+      sheet.addRow(['Pacientes Únicos:', medico.pacientes_unicos || 0]);
+      sheet.addRow(['Promedio Consultas/Día:', promedio]);
+
+
       if (medico.diagnosticos_frecuentes && medico.diagnosticos_frecuentes.length > 0) {
         sheet.addRow(['']);
         const diagRow = sheet.addRow(['Diagnósticos Más Frecuentes', 'Cantidad']);
@@ -204,7 +248,7 @@ class ExcelGenerator {
         diagRow.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFF1F5F9' }
+          fgColor: { argb: this.colors.graySoft }
         };
 
         medico.diagnosticos_frecuentes.slice(0, 5).forEach(diag => {
@@ -216,10 +260,10 @@ class ExcelGenerator {
       sheet.addRow(['']);
     });
 
-    // Ajustar anchos
+
     sheet.columns = [
       { width: 40 },
-      { width: 15 },
+      { width: 25 },
       { width: 15 },
       { width: 15 },
       { width: 15 }
@@ -227,19 +271,16 @@ class ExcelGenerator {
   }
 
   _addDiagnosticosSheet(sheet, datos) {
-    // Título
     sheet.mergeCells('A1:C1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = 'DIAGNÓSTICOS MÁS FRECUENTES';
-    titleCell.font = { size: 16, bold: true, color: { argb: 'FFF59E0B' } };
+    titleCell.font = { size: 16, bold: true, color: { argb: this.colors.warning } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     sheet.getRow(1).height = 25;
 
     sheet.addRow([]);
 
-    // Consolidar todos los diagnósticos
     const todosLosDiagnosticos = {};
-    
     datos.forEach(medico => {
       medico.diagnosticos_frecuentes?.forEach(diag => {
         if (todosLosDiagnosticos[diag.descripcion]) {
@@ -250,30 +291,29 @@ class ExcelGenerator {
       });
     });
 
-    // Ordenar por cantidad
     const diagnosticosOrdenados = Object.entries(todosLosDiagnosticos)
       .sort((a, b) => b[1] - a[1]);
 
-    // Headers
+
     const headerRow = sheet.addRow(['#', 'Diagnóstico', 'Total']);
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.font = { bold: true, color: { argb: this.colors.white } };
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FFF59E0B' }
+      fgColor: { argb: this.colors.warning }
     };
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.height = 22;
 
-    // Datos
+
     diagnosticosOrdenados.forEach(([diagnostico, cantidad], idx) => {
       const row = sheet.addRow([idx + 1, diagnostico, cantidad]);
-      
+
       if (idx % 2 === 0) {
         row.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFFEF3C7' }
+          fgColor: { argb: 'FFFDF6E3' } 
         };
       }
 
@@ -294,49 +334,48 @@ class ExcelGenerator {
       fgColor: { argb: 'FFFDE68A' }
     };
 
-    // Ajustar anchos
+
     sheet.columns = [
       { width: 8 },
       { width: 50 },
       { width: 12 }
     ];
 
-    // Bordes
+
     const lastRow = sheet.lastRow.number;
     for (let i = 4; i <= lastRow; i++) {
       for (let j = 1; j <= 3; j++) {
         const cell = sheet.getRow(i).getCell(j);
         cell.border = {
-          top: { style: 'thin', color: { argb: 'FFD97706' } },
-          left: { style: 'thin', color: { argb: 'FFD97706' } },
-          bottom: { style: 'thin', color: { argb: 'FFD97706' } },
-          right: { style: 'thin', color: { argb: 'FFD97706' } }
+          top: { style: 'thin', color: { argb: this.colors.warning } },
+          left: { style: 'thin', color: { argb: this.colors.warning } },
+          bottom: { style: 'thin', color: { argb: this.colors.warning } },
+          right: { style: 'thin', color: { argb: this.colors.warning } }
         };
       }
     }
   }
 
-  // REPORTE DE CONSULTAS EN EXCEL
-  
+
   async generarConsultasExcel(consultas, filtro) {
     const workbook = new ExcelJS.Workbook();
-    
+
     workbook.creator = 'Sistema de Gestión Médica';
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Consultas', {
-      properties: { tabColor: { argb: 'FF06B6D4' } }
+      properties: { tabColor: { argb: this.colors.primary } }
     });
 
-    // Título
+
     sheet.mergeCells('A1:G1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = 'REGISTRO DE CONSULTAS';
-    titleCell.font = { size: 18, bold: true, color: { argb: 'FF06B6D4' } };
+    titleCell.font = { size: 18, bold: true, color: { argb: this.colors.primaryDark } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     sheet.getRow(1).height = 30;
 
-    // Info
+
     sheet.mergeCells('A2:G2');
     const infoCell = sheet.getCell('A2');
     infoCell.value = `Generado: ${moment().format('DD/MM/YYYY HH:mm')}`;
@@ -353,7 +392,7 @@ class ExcelGenerator {
 
     sheet.addRow([]);
 
-    // Headers
+
     const headerRow = sheet.addRow([
       'Fecha',
       'Hora',
@@ -364,11 +403,11 @@ class ExcelGenerator {
       'Diagnóstico Principal'
     ]);
 
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.font = { bold: true, color: { argb: this.colors.white } };
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF06B6D4' }
+      fgColor: { argb: this.colors.primary }
     };
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.height = 25;
@@ -376,13 +415,14 @@ class ExcelGenerator {
     // Datos
     consultas.forEach((consulta, idx) => {
       const diagnosticoPrincipal = consulta.diagnosticos?.find(d => d.principal);
-      
+      const especialidad = this._getEspecialidadMedico(consulta.medico || consulta);
+
       const row = sheet.addRow([
         moment(consulta.created_at).format('DD/MM/YYYY'),
         moment(consulta.created_at).format('HH:mm'),
         consulta.paciente ? `${consulta.paciente.nombre} ${consulta.paciente.apellidos}` : 'N/A',
         consulta.medico ? `${consulta.medico.nombre} ${consulta.medico.apellidos}` : 'N/A',
-        consulta.medico?.especialidad || 'N/A',
+        especialidad,
         consulta.motivo || 'N/A',
         diagnosticoPrincipal?.descripcion || 'N/A'
       ]);
@@ -391,7 +431,7 @@ class ExcelGenerator {
         row.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFE0F2FE' }
+          fgColor: { argb: this.colors.light }
         };
       }
 
@@ -405,7 +445,7 @@ class ExcelGenerator {
       { width: 8 },
       { width: 25 },
       { width: 25 },
-      { width: 18 },
+      { width: 22 },
       { width: 35 },
       { width: 35 }
     ];
@@ -416,15 +456,14 @@ class ExcelGenerator {
       for (let j = 1; j <= 7; j++) {
         const cell = sheet.getRow(i).getCell(j);
         cell.border = {
-          top: { style: 'thin', color: { argb: 'FF0891B2' } },
-          left: { style: 'thin', color: { argb: 'FF0891B2' } },
-          bottom: { style: 'thin', color: { argb: 'FF0891B2' } },
-          right: { style: 'thin', color: { argb: 'FF0891B2' } }
+          top: { style: 'thin', color: { argb: this.colors.border } },
+          left: { style: 'thin', color: { argb: this.colors.border } },
+          bottom: { style: 'thin', color: { argb: this.colors.border } },
+          right: { style: 'thin', color: { argb: this.colors.border } }
         };
       }
     }
 
-    // Guardar
     const timestamp = Date.now();
     const fileName = `consultas_${timestamp}.xlsx`;
     const filePath = path.join(this.outputDir, fileName);
@@ -438,24 +477,24 @@ class ExcelGenerator {
     };
   }
 
-
-  // REPORTE DE PACIENTES EN EXCEL
-  
+  // ==========================
+  //  PACIENTES EN EXCEL
+  // ==========================
   async generarPacientesExcel(pacientes) {
     const workbook = new ExcelJS.Workbook();
-    
+
     workbook.creator = 'Sistema de Gestión Médica';
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Pacientes', {
-      properties: { tabColor: { argb: 'FF10B981' } }
+      properties: { tabColor: { argb: this.colors.success } }
     });
 
     // Título
     sheet.mergeCells('A1:F1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = 'REGISTRO DE PACIENTES';
-    titleCell.font = { size: 18, bold: true, color: { argb: 'FF10B981' } };
+    titleCell.font = { size: 18, bold: true, color: { argb: this.colors.success } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     sheet.getRow(1).height = 30;
 
@@ -471,18 +510,18 @@ class ExcelGenerator {
       'Estado'
     ]);
 
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.font = { bold: true, color: { argb: this.colors.white } };
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF10B981' }
+      fgColor: { argb: this.colors.success }
     };
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.height = 25;
 
     // Datos
     pacientes.forEach((paciente, idx) => {
-      const edad = paciente.fecha_nacimiento 
+      const edad = paciente.fecha_nacimiento
         ? moment().diff(moment(paciente.fecha_nacimiento), 'years')
         : 'N/A';
 
@@ -499,18 +538,25 @@ class ExcelGenerator {
         row.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFD1FAE5' }
+          fgColor: { argb: 'FFD1FAE5' } // verde suave
         };
       }
 
       row.getCell(4).alignment = { horizontal: 'center' };
       row.getCell(5).alignment = { horizontal: 'center' };
       row.getCell(6).alignment = { horizontal: 'center' };
+
+      const estadoCell = row.getCell(6);
+      if (estadoCell.value === 'Activo') {
+        estadoCell.font = { bold: true, color: { argb: this.colors.success } };
+      } else {
+        estadoCell.font = { bold: true, color: { argb: this.colors.danger } };
+      }
     });
 
     // Ajustar anchos
     sheet.columns = [
-      { width: 38 },
+      { width: 18 },
       { width: 30 },
       { width: 28 },
       { width: 18 },
@@ -518,7 +564,6 @@ class ExcelGenerator {
       { width: 12 }
     ];
 
-    // Guardar
     const timestamp = Date.now();
     const fileName = `pacientes_${timestamp}.xlsx`;
     const filePath = path.join(this.outputDir, fileName);
@@ -530,6 +575,53 @@ class ExcelGenerator {
       filePath,
       downloadUrl: `/download/${fileName}`
     };
+  }
+
+  // ==========================
+  //  HELPERS
+  // ==========================
+  _getNombreMedico(medico) {
+    if (!medico) return 'N/A';
+    if (medico.nombre_medico) return medico.nombre_medico;
+    if (medico.nombre && medico.apellidos) return `${medico.nombre} ${medico.apellidos}`;
+    if (medico.medico && medico.medico.nombre && medico.medico.apellidos) {
+      return `${medico.medico.nombre} ${medico.medico.apellidos}`;
+    }
+    return medico.nombre || 'N/A';
+  }
+
+  _getEspecialidadMedico(medico) {
+    if (!medico) return 'N/A';
+    if (medico.especialidad) return medico.especialidad;
+    if (medico.especialidad_medico) return medico.especialidad_medico;
+    if (medico.medico && medico.medico.especialidad) return medico.medico.especialidad;
+    if (medico.detalle && medico.detalle.especialidad) return medico.detalle.especialidad;
+    return 'Ginecología y Obstetricia';
+  }
+
+  _getEstadoMedico(medico) {
+    if (!medico) return 'N/A';
+    if (typeof medico.estado === 'string') return medico.estado;
+    if (typeof medico.activo === 'boolean') return medico.activo ? 'Activo' : 'Inactivo';
+    if (medico.total_consultas != null) {
+      return medico.total_consultas > 0 ? 'Activo' : 'Inactivo';
+    }
+    return 'N/A';
+  }
+
+  _getPromedioConsultas(medico, diasPeriodo) {
+    if (!medico) return 0;
+    if (medico.promedio_consultas_dia != null) {
+      return Number(medico.promedio_consultas_dia.toFixed
+        ? medico.promedio_consultas_dia.toFixed(2)
+        : medico.promedio_consultas_dia);
+    }
+    if (diasPeriodo && diasPeriodo > 0) {
+      const total = medico.total_consultas || 0;
+      const prom = total / diasPeriodo;
+      return Number(prom.toFixed(2));
+    }
+    return 0;
   }
 }
 
