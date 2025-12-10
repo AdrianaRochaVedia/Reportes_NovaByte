@@ -43,7 +43,7 @@ console.log('Cliente de Supabase creado');
 
 async function verificarConexionSupabase() {
   try {
-    console.log('🔌 Probando conexión con Supabase...');
+    console.log('Probando conexión con Supabase...');
     
     const { data, error } = await supabase
       .from('perfil')
