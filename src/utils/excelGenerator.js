@@ -412,7 +412,6 @@ class ExcelGenerator {
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.height = 25;
 
-    // Datos
     consultas.forEach((consulta, idx) => {
       const diagnosticoPrincipal = consulta.diagnosticos?.find(d => d.principal);
       const especialidad = this._getEspecialidadMedico(consulta.medico || consulta);
@@ -450,7 +449,6 @@ class ExcelGenerator {
       { width: 35 }
     ];
 
-    // Bordes
     const lastRow = sheet.lastRow.number;
     for (let i = 5; i <= lastRow; i++) {
       for (let j = 1; j <= 7; j++) {
@@ -477,9 +475,7 @@ class ExcelGenerator {
     };
   }
 
-  // ==========================
-  //  PACIENTES EN EXCEL
-  // ==========================
+
   async generarPacientesExcel(pacientes) {
     const workbook = new ExcelJS.Workbook();
 
@@ -490,7 +486,6 @@ class ExcelGenerator {
       properties: { tabColor: { argb: this.colors.success } }
     });
 
-    // Título
     sheet.mergeCells('A1:F1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = 'REGISTRO DE PACIENTES';
@@ -500,7 +495,6 @@ class ExcelGenerator {
 
     sheet.addRow([]);
 
-    // Headers
     const headerRow = sheet.addRow([
       'ID',
       'Nombre Completo',
@@ -538,7 +532,7 @@ class ExcelGenerator {
         row.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFD1FAE5' } // verde suave
+          fgColor: { argb: 'FFD1FAE5' } 
         };
       }
 
@@ -554,7 +548,6 @@ class ExcelGenerator {
       }
     });
 
-    // Ajustar anchos
     sheet.columns = [
       { width: 18 },
       { width: 30 },
@@ -577,9 +570,6 @@ class ExcelGenerator {
     };
   }
 
-  // ==========================
-  //  HELPERS
-  // ==========================
   _getNombreMedico(medico) {
     if (!medico) return 'N/A';
     if (medico.nombre_medico) return medico.nombre_medico;
