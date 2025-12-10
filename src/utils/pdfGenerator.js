@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const moment = require('moment');
+require('moment/locale/es');  
+moment.locale('es');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const { REPORTS_OUTPUT_DIR, REPORTS_TEMP_DIR } = require('../config');
 
@@ -49,7 +51,7 @@ class PDFGenerator {
 
 
   _addHeaderMedico(doc, titulo) {
-    const headerHeight = 80;
+    const headerHeight = 90;
     const logoPath = path.join(__dirname, '../assets/logoo.png');
     
     doc.rect(0, 0, doc.page.width, headerHeight)
@@ -63,14 +65,14 @@ class PDFGenerator {
       .text(titulo, 100, 25);
     
 
-    doc.fontSize(9).font(this.fonts.regular).fillColor(this.colors.white)
+    doc.fontSize(10).font(this.fonts.regular).fillColor(this.colors.white)
       .text(
         `Generado: ${moment().format('DD/MM/YYYY HH:mm')}`,
         doc.page.width - 200,
         30
       );
     
-    doc.fontSize(10).font(this.fonts.italic).fillColor(this.colors.primaryLight)
+    doc.fontSize(11).font(this.fonts.italic).fillColor(this.colors.primaryLight)
       .text('FEMCARE - Sistema de Gestión Médica', 100, 48);
     
     doc.strokeColor(this.colors.accent).lineWidth(3)
@@ -79,54 +81,61 @@ class PDFGenerator {
     doc.y = headerHeight + 20;
   }
 
-  _addPortadaMedica(doc, titulo) {
+    _addPortadaMedica(doc, titulo) {
     doc.addPage({ size: 'A4', margin: 0 });
-    
+
     doc.rect(0, 0, doc.page.width, doc.page.height / 2)
       .fillColor(this.colors.primary).fill();
-    
+
     doc.rect(0, doc.page.height / 2, doc.page.width, doc.page.height / 2)
       .fillColor(this.colors.primaryDark).fill();
-    
+
     const logoPath = path.join(__dirname, '../assets/logoo.png');
+    const logoSize = 210;
+    const logoY = 150;
+    const logoSpacing = 70; 
+
     if (fs.existsSync(logoPath)) {
-      const logoSize = 210;
-      doc.image(logoPath, 
-        (doc.page.width - logoSize) / 2, 
-        150, 
+      doc.image(
+        logoPath,
+        (doc.page.width - logoSize) / 2,
+        logoY,
         { width: logoSize, height: logoSize }
       );
     }
-    
+
+    const baseTextY = logoY + logoSize + logoSpacing;
+
     doc.fontSize(42).font(this.fonts.bold).fillColor(this.colors.white)
-      .text(titulo, 0, doc.page.height / 2 - 80, {
+      .text(titulo, 0, baseTextY, {
         align: 'center',
         width: doc.page.width
       });
-    
+
     doc.fontSize(24).font(this.fonts.regular).fillColor(this.colors.primaryLight)
-      .text('FEMCARE', 0, doc.page.height / 2 - 20, {
+      .text('FEMCARE', 0, baseTextY + 50, {
         align: 'center',
         width: doc.page.width
       });
-    
 
     doc.fontSize(14).font(this.fonts.italic).fillColor(this.colors.white)
-      .text('Sistema de Gestión Médica', 0, doc.page.height / 2 + 15, {
+      .text('Sistema de Gestión Médica', 0, baseTextY + 90, {
         align: 'center',
         width: doc.page.width
       });
-    
+
     doc.fontSize(12).font(this.fonts.regular).fillColor(this.colors.primaryLight)
       .text(
         moment().format('DD [de] MMMM [de] YYYY - HH:mm'),
-        0, doc.page.height - 100,
+        0,
+        doc.page.height - 100,
         {
           align: 'center',
           width: doc.page.width
         }
       );
   }
+
 
   _addFooter(doc, pageNumber) {
     const prevBottomMargin = doc.page.margins.bottom;
@@ -144,14 +153,14 @@ class PDFGenerator {
       .lineTo(doc.page.width - 40, lineY)
       .stroke();
 
-    doc.fontSize(8).font(this.fonts.regular).fillColor(this.colors.secondary)
+    doc.fontSize(10).font(this.fonts.regular).fillColor(this.colors.secondary)
       .text('FEMCARE © 2025', 40, textY, {
         width: thirdWidth - 40,
         align: 'left',
         lineBreak: false
       });
 
-    doc.fontSize(9).font(this.fonts.bold).fillColor(this.colors.primary)
+    doc.fontSize(11).font(this.fonts.bold).fillColor(this.colors.primary)
       .text(`Página ${pageNumber}`, thirdWidth, textY, {
         width: thirdWidth,
         align: 'center',
@@ -159,7 +168,7 @@ class PDFGenerator {
       });
 
 
-    doc.fontSize(8).font(this.fonts.regular).fillColor(this.colors.secondary)
+    doc.fontSize(9).font(this.fonts.regular).fillColor(this.colors.secondary)
       .text('Confidencial', thirdWidth * 2, textY, {
         width: thirdWidth - 40,
         align: 'right',
@@ -174,16 +183,18 @@ class PDFGenerator {
 
 
   _createModernTable(doc, headers, rows, columnWidths, onNewPage) {
-    const startX = 40;
     const rowHeight = 35;
     const headerHeight = 40;
     let y = doc.y;
     const footerHeight = 80;
     
+    // Ancho total de la tabla
     const totalWidth = Object.values(columnWidths).reduce((sum, w) => sum + w, 0);
-    
-    const drawHeader = () => {
 
+    // CENTRAR LA TABLA EN LA PÁGINA
+    const startX = (doc.page.width - totalWidth) / 2;
+
+    const drawHeader = () => {
       doc.rect(startX, y, totalWidth, headerHeight)
         .fillColor(this.colors.primary).fill();
       
@@ -191,7 +202,7 @@ class PDFGenerator {
         .fillColor(this.colors.accent).fill();
       
       let currentX = startX;
-      doc.font(this.fonts.bold).fontSize(10).fillColor(this.colors.white);
+      doc.font(this.fonts.bold).fontSize(11).fillColor(this.colors.white);
       
       Object.entries(headers).forEach(([key, title]) => {
         doc.text(
@@ -250,7 +261,8 @@ class PDFGenerator {
     });
     
     doc.y = y + 10;
-  }
+}
+
 
   _addModernSection(doc, titulo, contenido, icon = null) {
     const boxPadding = 15;
@@ -289,7 +301,7 @@ class PDFGenerator {
       { label: 'Pacientes', value: stats.total_pacientes, icon: '', color: this.colors.accent },
       { label: 'Consultas Totales', value: stats.total_consultas, icon: '', color: this.colors.success },
       { label: 'Consultas Mes Actual', value: stats.consultas_mes_actual, icon: '', color: this.colors.warning },
-      { label: 'Citas Programadas', value: stats.citas_programadas, icon: '', color: this.colors.secondary },
+      { label: 'Citas Programadas', value: stats.citas_programadas, icon: '', color: this.colors.white },
       { label: 'Citas Completadas', value: stats.citas_completadas, icon: '', color: this.colors.success }
     ];
     
@@ -983,7 +995,7 @@ class PDFGenerator {
 
     if (consulta.medico) {
       doc.text(
-        `👨‍⚕️ Médico: Dr(a). ${consulta.medico.nombre} ${consulta.medico.apellidos}`,
+        `Médico: Dr(a). ${consulta.medico.nombre} ${consulta.medico.apellidos}`,
         60, currentY
       );
       currentY += 18;
