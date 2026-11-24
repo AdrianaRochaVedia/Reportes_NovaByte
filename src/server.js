@@ -1,6 +1,7 @@
 require('dotenv').config(); 
 
-const { ApolloServer } = require('apollo-server-express');
+const { ApolloServer, AuthenticationError } = require('apollo-server-express');
+const { autenticarAdmin, firmarUrl, verificarFirma, registrar } = require('./security/auth');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
@@ -94,18 +95,42 @@ async function startServer() {
       next();
     });
 
+    // Cada operacion exige sesion de administrador, queda en la bitacora y devuelve enlaces de descarga firmados.
+    const resolversSeguros = (Array.isArray(resolvers) ? resolvers : [resolvers]).map((r) => {
+      const salida = { ...r };
+      for (const tipo of ['Query', 'Mutation']) {
+        if (!r[tipo]) continue;
+        salida[tipo] = {};
+        for (const [nombre, fn] of Object.entries(r[tipo])) {
+          salida[tipo][nombre] = async (parent, args, ctx, info) => {
+            if (!ctx.user) throw new AuthenticationError('No autorizado');
+            const res = await fn(parent, args, ctx, info);
+            const filtro = (args && args.filtro) || args || {};
+            const cuenta = Object.entries(filtro).find(([k, v]) => /paciente/i.test(k) && typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v));
+            await registrar({
+              actor_id: ctx.user.id, actor_rol: ctx.user.rol, cuenta_id: cuenta ? cuenta[1] : null,
+              accion: tipo === 'Mutation' ? 'exportacion' : 'consulta', objeto: `reporte:${nombre}`,
+              ip: ctx.req && ctx.req.ip, user_agent: ctx.req && ctx.req.headers['user-agent'],
+            });
+            if (res && res.downloadUrl) res.downloadUrl = firmarUrl(res.downloadUrl, ctx.user.id);
+            return res;
+          };
+        }
+      }
+      return salida;
+    });
+
     const server = new ApolloServer({ 
       typeDefs, 
-      resolvers,
-      context: ({ req }) => {
-        // Extraer token del header
-        const token = req.headers['authorization']?.replace('Bearer ', '') || 
-                      req.headers['x-token'] || '';
-
-        return { 
-          token,
-          supabase
-        };
+      resolvers: resolversSeguros,
+      context: async ({ req }) => {
+        let user;
+        try {
+          user = await autenticarAdmin(req);
+        } catch (e) {
+          throw new AuthenticationError('No autorizado');
+        }
+        return { user, supabase, req };
       },
       formatError: (err) => {
         console.error('GraphQL Error:', err.message);
@@ -124,9 +149,27 @@ async function startServer() {
       cors: false 
     });
 
+    // Descargas: enlace firmado y vigente, o sesion de administrador. Listar, borrar y estadisticas: solo administrador.
+    app.use('/download', async (req, res, next) => {
+      const esArchivo = req.method === 'GET' && /^\/[^/]+$/.test(req.path);
+      if (esArchivo) {
+        const { e, u, t } = req.query;
+        if (verificarFirma(decodeURIComponent(req.path.slice(1)), e, u, t)) {
+          registrar({ actor_id: u, actor_rol: 'medicoAdmin', accion: 'descarga', objeto: 'reporte_archivo', ip: req.ip, user_agent: req.headers['user-agent'] });
+          return next();
+        }
+      }
+      try {
+        req.usuario = await autenticarAdmin(req);
+        next();
+      } catch (err) {
+        res.status(401).json({ error: 'No autorizado' });
+      }
+    });
+
     setupDownloadRoutes(app);
 
-    app.use('/reportes', express.static(REPORTS_OUTPUT_DIR));
+    // (Se elimino la carpeta publica /reportes: los archivos solo salen por /download con enlace firmado.)
 
     app.get('/health', async (req, res) => {
       const supabaseStatus = await verificarConexionSupabase();
